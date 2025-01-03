@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -7,6 +8,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 contract ProjectContract is AccessControl, ReentrancyGuard {
     bytes32 public constant PROJECT_MANAGER_ROLE = keccak256("PROJECT_MANAGER_ROLE");
     bytes32 public constant FIELD_AGENT_ROLE = keccak256("FIELD_AGENT_ROLE");
+    bytes32 public constant NGO_ROLE = keccak256("NGO_ROLE");
 
     struct Beneficiary {
         address wallet;
@@ -22,6 +24,9 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
     string public projectName;
     address public donorWallet;
     address public primaryWallet;
+    address public ngo;
+
+    bool private initialized;
     uint256 public maxSpendingLimit;
 
     mapping(address => Beneficiary) public beneficiaries;
@@ -32,21 +37,34 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
     event VendorRegistered(address indexed vendor);
     event VendorDeregistered(address indexed vendor);
 
-    constructor(string memory _projectName, address _donorWallet, address _primaryWallet, address _ngo) {
+    modifier onlyManager() {
+        require(hasRole(PROJECT_MANAGER_ROLE, msg.sender), "Caller is not a Project Manager");
+        _;
+    }
+
+     modifier initializer() {
+        require(!initialized, "Contract is already initialized");
+        initialized = true;
+        _;
+    }
+
+    function initialize(
+        string memory _projectName,
+        address _donorWallet,
+        address _primaryWallet,
+        address _ngo
+    ) external initializer {
         require(_donorWallet != address(0), "Donor wallet cannot be zero address");
         require(_primaryWallet != address(0), "Primary wallet cannot be zero address");
 
         projectName = _projectName;
         donorWallet = _donorWallet;
         primaryWallet = _primaryWallet;
+        ngo = _ngo;
 
+        _grantRole(NGO_ROLE, _ngo);
         _grantRole(DEFAULT_ADMIN_ROLE, _ngo);
         _grantRole(PROJECT_MANAGER_ROLE, _ngo);
-    }
-
-    modifier onlyManager() {
-        require(hasRole(PROJECT_MANAGER_ROLE, msg.sender), "Caller is not a Project Manager");
-        _;
     }
 
     // Allocate allowance to a beneficiary

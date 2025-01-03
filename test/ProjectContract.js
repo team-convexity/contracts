@@ -9,9 +9,8 @@ describe("ProjectContract", function () {
 
     // Deploy the ProjectContract
     ProjectContract = await ethers.getContractFactory("ProjectContract");
-    project = await ProjectContract.deploy("projectX", donor.address, primary.address, ngo.address);
-
-    // await project.deployed;
+    project = await ProjectContract.deploy();
+    await project.initialize("projectX", donor.address, primary.address, ngo.address)
 
   });
 

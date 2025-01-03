@@ -1,30 +1,41 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.18;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./ProjectContract.sol";
 
-contract ProjectFactory is AccessControl {
-    bytes32 public constant NGO_ROLE = keccak256("NGO_ROLE");
-
-    // Store deployed project contracts
+contract ProjectFactory {
+    address public implementation;
     address[] public deployedProjects;
 
-    event ProjectCreated(address indexed projectAddress, string name, address ngo);
+    event ProjectCreated(address indexed projectAddress, string projectName);
 
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(NGO_ROLE, msg.sender);
+    constructor(address _implementation) {
+        require(_implementation != address(0), "Implementation address cannot be zero");
+        implementation = _implementation;
     }
 
-    // Deploy a new project contract
-    function createProject(string memory name, address donorWallet, address primaryWallet) external onlyRole(NGO_ROLE) {
-        ProjectContract newProject = new ProjectContract(name, donorWallet, primaryWallet, msg.sender);
-        deployedProjects.push(address(newProject));
-        emit ProjectCreated(address(newProject), name, msg.sender);
+    function createProject(
+        string memory _projectName,
+        address _donorWallet,
+        address _primaryWallet,
+        address _ngo
+    ) external returns (address) {
+        address clone = Clones.clone(implementation);
+
+        ProjectContract(payable(clone)).initialize(
+            _projectName,
+            _donorWallet,
+            _primaryWallet,
+            _ngo
+        );
+
+        deployedProjects.push(clone);
+
+        emit ProjectCreated(clone, _projectName);
+        return clone;
     }
 
-    // Get all deployed projects
     function getDeployedProjects() external view returns (address[] memory) {
         return deployedProjects;
     }
