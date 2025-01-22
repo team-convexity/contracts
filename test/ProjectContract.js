@@ -27,16 +27,6 @@ describe("ProjectContract", function () {
   });
 
   describe("Beneficiary Management", function () {
-    it("should allow adding a beneficiary and setting an allowance", async function () {
-      await project.connect(ngo).updateMaxSpendingLimit(ethers.parseEther("10"));
-      await project.connect(ngo).allocateAllowance(beneficiary.address, ethers.parseEther("5"));
-
-      const beneficiaryData = await project.beneficiaries(beneficiary.address);
-      expect(beneficiaryData.wallet).to.equal(beneficiary.address);
-      expect(beneficiaryData.allowance).to.equal(ethers.parseEther("5"));
-      expect(beneficiaryData.isActive).to.be.true;
-    });
-
     it("should not allow non-admins to allocate allowance", async function () {
       await expect(
         project.connect(other).allocateAllowance(beneficiary.address, ethers.parseEther("5"))

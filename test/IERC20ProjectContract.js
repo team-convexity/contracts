@@ -24,7 +24,7 @@ describe("Modified ProjectContract with IERC20", function () {
       "Test Project",
       donor.address,
       primary.address,
-      ngo.address,
+      primary.address,
       erc20Token.target
     );
   });
@@ -34,8 +34,11 @@ describe("Modified ProjectContract with IERC20", function () {
       // Approve tokens
       await erc20Token.connect(primary).approve(project.target, ethers.parseEther("100"));
 
-      // Deposit tokens into the contract
-      await project.connect(primary).depositTokens(ethers.parseEther("100"));
+     // Set max spending limit
+     await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("100"));
+
+       // Allocate allowance and deposit tokens into the contract
+       await project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("100"));
 
       // Check contract balance
       const contractBalance = await erc20Token.balanceOf(project.target);
@@ -44,26 +47,27 @@ describe("Modified ProjectContract with IERC20", function () {
 
     it("should allocate an allowance to a beneficiary", async function () {
       // Set max spending limit
-      await project.connect(ngo).updateMaxSpendingLimit(ethers.parseEther("200"));
+      await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("200"));
+
+     // Approve tokens
+     await erc20Token.connect(primary).approve(project.target, ethers.parseEther("100"));
 
       // Allocate allowance
-      await project.connect(ngo).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
+      await project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
 
       const beneficiaryData = await project.beneficiaries(beneficiary.address);
       expect(beneficiaryData.allowance).to.equal(ethers.parseEther("50"));
     });
 
     it("should allow a beneficiary to claim funds and transfer tokens to a vendor", async function () {
-      // Approve and deposit tokens
+      // Approve tokens
       await erc20Token.connect(primary).approve(project.target, ethers.parseEther("100"));
-      await project.connect(primary).depositTokens(ethers.parseEther("100"));
-
-      // Allocate allowance
-      await project.connect(ngo).updateMaxSpendingLimit(ethers.parseEther("200"));
-      await project.connect(ngo).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
+      // Allocate allowance and deposit tokens
+      await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("200"));
+      await project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
 
       // Register vendor
-        await project.connect(ngo).registerVendor(vendor.address);
+        await project.connect(primary).registerVendor(vendor.address);
       // Beneficiary claims funds
       await erc20Token.connect(primary).approve(vendor.address, ethers.parseEther("50"));
       await project.connect(beneficiary).claimFunds(vendor.address, ethers.parseEther("50"));
@@ -79,10 +83,11 @@ describe("Modified ProjectContract with IERC20", function () {
 
     it("should not allow a beneficiary to claim more than their allowance", async function () {
       // Allocate allowance
-      await project.connect(ngo).updateMaxSpendingLimit(ethers.parseEther("200"));
-      await project.connect(ngo).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
+      await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("200"));
+      await erc20Token.connect(primary).approve(project.target, ethers.parseEther("50"));
+      await project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("50"));
       // Register vendor
-      await project.connect(ngo).registerVendor(vendor.address);
+      await project.connect(primary).registerVendor(vendor.address);
       // Try to claim more than the allocated allowance
       await expect(
         project.connect(beneficiary).claimFunds(vendor.address, ethers.parseEther("60"))
@@ -91,13 +96,28 @@ describe("Modified ProjectContract with IERC20", function () {
 
     it("should not allow allocating an allowance exceeding the max spending limit", async function () {
       // Set max spending limit
-      await project.connect(ngo).updateMaxSpendingLimit(ethers.parseEther("40"));
+      await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("40"));
 
       // Try to allocate more than the max spending limit
       await expect(
-        project.connect(ngo).allocateAllowance(beneficiary.address, ethers.parseEther("50"))
+        project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("50"))
       ).to.be.revertedWith("Amount exceeds spending limit");
     });
 
+  });
+  describe("Beneficiary Management", function () {
+    it("should allow adding a beneficiary and setting an allowance", async function () {
+      await project.connect(primary).updateMaxSpendingLimit(ethers.parseEther("10"));
+
+       // Approve tokens
+     await erc20Token.connect(primary).approve(project.target, ethers.parseEther("10"));
+
+      await project.connect(primary).allocateAllowance(beneficiary.address, ethers.parseEther("5"));
+
+      const beneficiaryData = await project.beneficiaries(beneficiary.address);
+      expect(beneficiaryData.wallet).to.equal(beneficiary.address);
+      expect(beneficiaryData.allowance).to.equal(ethers.parseEther("5"));
+      expect(beneficiaryData.isActive).to.be.true;
+    });
   });
 });

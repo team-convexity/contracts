@@ -30,16 +30,11 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
 
     IERC20 public token; // ERC20 Token instance
 
-    // mapping(address => uint256) public allowances;
-    
-
     bool private initialized;
     uint256 public maxSpendingLimit;
 
     mapping(address => Beneficiary) public beneficiaries;
     mapping(address => Vendor) public vendors;
-
-     mapping(address => uint256) public balances;
 
     event TokensDeposited(address indexed from, uint256 amount);
     event AllowanceAllocated(address indexed beneficiary, uint256 amount);
@@ -88,6 +83,8 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
 
         require(token.balanceOf(primaryWallet) >= _amount, "Insufficient funds in primary wallet");
 
+        require(_amount > 0, "Amount must be greater than zero");
+
 
         beneficiaries[_beneficiary] = Beneficiary({
             wallet: _beneficiary,
@@ -95,9 +92,9 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
             isActive: true
         });
 
-        // beneficiaries[_beneficiary].allowance += _amount;
-        // beneficiaries[_beneficiary].isActive = true;
-        // beneficiaries[_beneficiary].wallet = _beneficiary;
+        // Transfer tokens from the sender to the contract
+        bool success = token.transferFrom(msg.sender, address(this), _amount);
+        require(success, "Token transfer failed");
 
 
         emit AllowanceAllocated(_beneficiary, _amount);
@@ -114,14 +111,9 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
 
         beneficiary.allowance -= _amount;
 
-        // (bool success, ) = _vendor.call{value: _amount}("");
-        // require(success, "Transfer failed");
-
-        // Transfer tokens from the contract to the vendor
-        require(
-            token.transferFrom(primaryWallet, _vendor, _amount),
-            "Transfer failed"
-        );
+          // Transfer tokens from the contract to the vendor
+        bool success = token.transfer(_vendor, _amount);
+        require(success, "Token transfer failed");
 
         emit FundsClaimed(_vendor, msg.sender, _amount);
     }
@@ -147,27 +139,10 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
         emit VendorDeregistered(_vendor);
     }
 
-    //Deposit tokens to the contract
-    function depositTokens(uint256 amount) external {
-        require(amount > 0, "Amount must be greater than zero");
-
-        // Transfer tokens from the sender to the contract
-        bool success = token.transferFrom(msg.sender, address(this), amount);
-        require(success, "Token transfer failed");
-
-        // Update balances
-        balances[msg.sender] += amount;
-
-        emit TokensDeposited(msg.sender, amount);
-    }
-
-
     // Update maximum spending limit
     function updateMaxSpendingLimit(uint256 _newLimit) external onlyManager {
         require(_newLimit > 0, "Spending limit must be greater than zero");
         maxSpendingLimit += _newLimit;
-
-        // token.approve(primaryWallet, maxSpendingLimit);
 
     }
 
