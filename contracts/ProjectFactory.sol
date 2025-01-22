@@ -19,7 +19,8 @@ contract ProjectFactory {
         string memory _projectName,
         address _donorWallet,
         address _primaryWallet,
-        address _ngo
+        address _ngo,
+        address _token
     ) external returns (address) {
         address clone = Clones.clone(implementation);
 
@@ -27,7 +28,8 @@ contract ProjectFactory {
             _projectName,
             _donorWallet,
             _primaryWallet,
-            _ngo
+            _ngo,
+            _token
         );
 
         deployedProjects.push(clone);

@@ -4,6 +4,8 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 
 contract ProjectContract is AccessControl, ReentrancyGuard {
     bytes32 public constant PROJECT_MANAGER_ROLE = keccak256("PROJECT_MANAGER_ROLE");
@@ -26,12 +28,20 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
     address public primaryWallet;
     address public ngo;
 
+    IERC20 public token; // ERC20 Token instance
+
+    // mapping(address => uint256) public allowances;
+    
+
     bool private initialized;
     uint256 public maxSpendingLimit;
 
     mapping(address => Beneficiary) public beneficiaries;
     mapping(address => Vendor) public vendors;
 
+     mapping(address => uint256) public balances;
+
+    event TokensDeposited(address indexed from, uint256 amount);
     event AllowanceAllocated(address indexed beneficiary, uint256 amount);
     event FundsClaimed(address indexed vendor, address indexed beneficiary, uint256 amount);
     event VendorRegistered(address indexed vendor);
@@ -52,15 +62,20 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
         string memory _projectName,
         address _donorWallet,
         address _primaryWallet,
-        address _ngo
+        address _ngo,
+        address _token
     ) external initializer {
         require(_donorWallet != address(0), "Donor wallet cannot be zero address");
         require(_primaryWallet != address(0), "Primary wallet cannot be zero address");
+        require(_token != address(0), "Token address cannot be zero");
 
         projectName = _projectName;
         donorWallet = _donorWallet;
         primaryWallet = _primaryWallet;
         ngo = _ngo;
+        token = IERC20(_token);
+        
+        
 
         _grantRole(NGO_ROLE, _ngo);
         _grantRole(DEFAULT_ADMIN_ROLE, _ngo);
@@ -71,11 +86,19 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
     function allocateAllowance(address _beneficiary, uint256 _amount) external onlyManager {
         require(_amount <= maxSpendingLimit, "Amount exceeds spending limit");
 
+        require(token.balanceOf(primaryWallet) >= _amount, "Insufficient funds in primary wallet");
+
+
         beneficiaries[_beneficiary] = Beneficiary({
             wallet: _beneficiary,
             allowance: _amount,
             isActive: true
         });
+
+        // beneficiaries[_beneficiary].allowance += _amount;
+        // beneficiaries[_beneficiary].isActive = true;
+        // beneficiaries[_beneficiary].wallet = _beneficiary;
+
 
         emit AllowanceAllocated(_beneficiary, _amount);
     }
@@ -91,8 +114,14 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
 
         beneficiary.allowance -= _amount;
 
-        (bool success, ) = _vendor.call{value: _amount}("");
-        require(success, "Transfer failed");
+        // (bool success, ) = _vendor.call{value: _amount}("");
+        // require(success, "Transfer failed");
+
+        // Transfer tokens from the contract to the vendor
+        require(
+            token.transferFrom(primaryWallet, _vendor, _amount),
+            "Transfer failed"
+        );
 
         emit FundsClaimed(_vendor, msg.sender, _amount);
     }
@@ -118,10 +147,28 @@ contract ProjectContract is AccessControl, ReentrancyGuard {
         emit VendorDeregistered(_vendor);
     }
 
+    //Deposit tokens to the contract
+    function depositTokens(uint256 amount) external {
+        require(amount > 0, "Amount must be greater than zero");
+
+        // Transfer tokens from the sender to the contract
+        bool success = token.transferFrom(msg.sender, address(this), amount);
+        require(success, "Token transfer failed");
+
+        // Update balances
+        balances[msg.sender] += amount;
+
+        emit TokensDeposited(msg.sender, amount);
+    }
+
+
     // Update maximum spending limit
     function updateMaxSpendingLimit(uint256 _newLimit) external onlyManager {
         require(_newLimit > 0, "Spending limit must be greater than zero");
-        maxSpendingLimit = _newLimit;
+        maxSpendingLimit += _newLimit;
+
+        // token.approve(primaryWallet, maxSpendingLimit);
+
     }
 
     // Allow contract to receive ETH

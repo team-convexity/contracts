@@ -3,10 +3,10 @@ const { expect } = require("chai");
 describe("ProjectFactory", function () {
     let projectImplementation;
     let projectFactory;
-    let donor, primary, ngo;
+    let donor, primary, token, ngo;
 
     beforeEach(async function () {
-        [admin, donor, primary, ngo] = await ethers.getSigners();
+        [admin, donor, primary,token, ngo] = await ethers.getSigners();
 
         // Deploy ProjectContract implementation
         const ProjectContract = await ethers.getContractFactory("ProjectContract");
@@ -23,7 +23,8 @@ describe("ProjectFactory", function () {
             "Test Project",
             donor.address,
             primary.address,
-            ngo.address
+            ngo.address,
+            token.address
         );
         await tx.wait();
 
