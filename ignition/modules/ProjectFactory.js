@@ -7,7 +7,7 @@ const { buildModule } = require("@nomicfoundation/hardhat-ignition/modules");
 
 module.exports = buildModule("ProjectFactoryModule", (m) => {
 
-  const _implementation = m.getParameter("_implementation","0xd829E817C24Cf483042dad21dF89C58d8d9aeFD3");  
+  const _implementation = m.getParameter("_implementation","0x88ffA5BBEf62ffF9C7561404808f2b8D01dAa979");  
   const projectFactory = m.contract("ProjectFactory", [_implementation]);
 
   return { projectFactory };
