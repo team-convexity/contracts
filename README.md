@@ -5,7 +5,7 @@ This repository contains the smart contracts that power the CHATS platform's blo
 ## Core Contracts
 
 ### 1. Project Contract (Soroban)
-[`projectContract/src/lib.rs`](contracts/stellar-contracts/soroban-contract/contracts/projectContract/src/lib.rs)
+[`ProjectContract/src/lib.rs`](stellar-contracts/soroban-contract/contracts/projectContract/src/lib.rs)
 
 A Stellar Soroban smart contract that manages cash and item allowances for NGOs, vendors, and beneficiaries. It implements a role-based access control system and handles allowance allocation, claiming, and transfers.
 
@@ -18,7 +18,7 @@ Key Features:
 - Pause/unpause functionality
 
 ### 2. Project Contract (ERC20)
-[`ProjectContract.sol`](contracts/contracts/ProjectContract.sol)
+[`ProjectContract.sol`](contracts/ProjectContract.sol)
 
 An Ethereum-based ERC20 implementation of the project contract. It manages token-based allowances and vendor interactions.
 
@@ -31,7 +31,7 @@ Key Features:
 - Reentrancy protection
 
 ### 3. USDT Test Token
-[`USDTContract.sol`](contracts/contracts/USDTContract.sol)
+[`USDTContract.sol`](contracts/USDTContract.sol)
 
 A simplified USDT implementation for testing purposes on the Sepolia testnet.
 
