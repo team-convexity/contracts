@@ -41,19 +41,6 @@ Key Features:
 - Transfer and approval mechanisms
 - Event emission
 
-## Contract Architecture
-
-### Stellar Soroban Implementation
-The Soroban implementation focuses on:
-- Efficient state management
-- Role-based permissions
-- Allowance tracking
-- Event emission
-- Batch operations
-
-### Ethereum Implementation
-The Ethereum implementation provides:
-- ERC20 token integration
 - Access control
 - Allowance management
 - Vendor interactions
