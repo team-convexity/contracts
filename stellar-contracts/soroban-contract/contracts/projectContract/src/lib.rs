@@ -240,14 +240,15 @@ impl ProjectContract {
 
         set_roles(&env, &project_id, &roles);
         env.events().publish(
-            (Symbol::new(&env, "RoleAssigned"), project_id.clone(), role.clone()),
-            RoleAssigned {
-                project_id: project_id.clone(),
-                role,
-                assignee: new_member,
-            }
+            (
+                RoleAssigned {
+                    project_id: project_id.clone(),
+                    role,
+                    assignee: new_member,
+                },
+            ),
+            ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::AddRole, &project_id);
         Ok(())
     }
 
@@ -281,7 +282,6 @@ impl ProjectContract {
             vec.iter().filter(|m| *m != member_to_remove)
         );
         set_roles(&env, &project_id, &roles);
-        clear_reentrancy_lock(&env, ReentrancyLock::RemoveRole, &project_id);
         Ok(())
     }
 
@@ -334,7 +334,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::AllocCash, &project_id);
         Ok(())
     }
 
@@ -392,7 +391,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::ClaimCash, &project_id);
         Ok(())
     }
 
@@ -432,7 +430,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::AllocItem, &project_id);
         Ok(())
     }
 
@@ -488,7 +485,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::ClaimItem, &project_id);
         Ok(())
     }
 
@@ -531,7 +527,6 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .set(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()), &allowances_map);
-        clear_reentrancy_lock(&env, ReentrancyLock::AllocCashBatch, &project_id);
         Ok(())
     }
 
@@ -573,7 +568,6 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .set(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()), &allowances_map);
-        clear_reentrancy_lock(&env, ReentrancyLock::AllocItemBatch, &project_id);
         Ok(())
     }
 
@@ -630,7 +624,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::TransferCash, &project_id);
         Ok(())
     }
 
@@ -686,7 +679,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::TransferItem, &project_id);
         Ok(())
     }
 
@@ -739,7 +731,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::RedeemItem, &project_id);
         Ok(())
     }
 
@@ -793,7 +784,6 @@ impl ProjectContract {
             ),
             ()
         );
-        clear_reentrancy_lock(&env, ReentrancyLock::RedeemCash, &project_id);
         Ok(())
     }
 
@@ -993,35 +983,20 @@ fn non_reentrant(
     lock_type: ReentrancyLock,
     project_id: &String
 ) -> Result<(), ContractError> {
-    // skip check for read-only functions
-    match lock_type {
-        | ReentrancyLock::GetCashAllowance
-        | ReentrancyLock::GetItemAllowance
-        | ReentrancyLock::GetAllCash
-        | ReentrancyLock::GetAllItems
-        | ReentrancyLock::GetTotalCash
-        | ReentrancyLock::GetTotalItems
-        | ReentrancyLock::GetRoles => {
-            return Ok(());
+    let lock_key = (lock_type.to_symbol(env), project_id.clone());
+    if let Some(timestamp) = env.storage().persistent().get::<_, u64>(&lock_key) {
+        // if lock is still valid (10 second expiry)
+        if env.ledger().timestamp() <= timestamp.saturating_add(10_000) {
+            return Err(ContractError::ReentrancyDetected);
         }
-        _ => {}
     }
 
-    let lock_key = (lock_type.to_symbol(env), project_id.clone());
-    if env.storage().persistent().has(&lock_key) {
-        return Err(ContractError::ReentrancyDetected);
-    }
-    env.storage().persistent().set(&lock_key, &true);
+    env.storage().persistent().set(&lock_key, &env.ledger().timestamp());
+
     Ok(())
 }
-
 fn check_role_limits(vec: &Vec<Address>, member: &Address) -> Result<(), ContractError> {
     if vec.contains(member) { Err(ContractError::RoleAlreadyExists) } else { Ok(()) }
-}
-
-fn clear_reentrancy_lock(env: &Env, lock_type: ReentrancyLock, project_id: &String) {
-    let lock_key = (lock_type.to_symbol(env), project_id.clone());
-    env.storage().persistent().remove(&lock_key);
 }
 
 #[cfg(test)]
