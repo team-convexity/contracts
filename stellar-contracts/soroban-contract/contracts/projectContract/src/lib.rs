@@ -240,14 +240,12 @@ impl ProjectContract {
 
         set_roles(&env, &project_id, &roles);
         env.events().publish(
-            (
-                RoleAssigned {
-                    project_id: project_id.clone(),
-                    role,
-                    assignee: new_member,
-                },
-            ),
-            ()
+            (Symbol::new(&env, "RoleAssigned"), project_id.clone(), role.clone()),
+            RoleAssigned {
+                project_id: project_id.clone(),
+                role,
+                assignee: new_member,
+            }
         );
         clear_reentrancy_lock(&env, ReentrancyLock::AddRole, &project_id);
         Ok(())
