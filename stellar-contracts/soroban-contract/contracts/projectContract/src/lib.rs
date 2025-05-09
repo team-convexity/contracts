@@ -213,7 +213,7 @@ impl ProjectContract {
         role: String,
         new_member: Address
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AddRole)?;
+        non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
         require_owner(&env, &caller)?;
 
         let member_clone = new_member.clone();
@@ -242,13 +242,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 RoleAssigned {
-                    project_id,
+                    project_id: project_id.clone(),
                     role,
                     assignee: new_member,
                 },
             ),
             ()
         );
+        clear_reentrancy_lock(&env, ReentrancyLock::AddRole, &project_id);
         Ok(())
     }
 
@@ -259,7 +260,7 @@ impl ProjectContract {
         role: String,
         member_to_remove: Address
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::RemoveRole)?;
+        non_reentrant(&env, ReentrancyLock::RemoveRole, &project_id)?;
         require_owner(&env, &caller)?;
         let mut roles = get_roles(&env, &project_id);
 
@@ -282,19 +283,18 @@ impl ProjectContract {
             vec.iter().filter(|m| *m != member_to_remove)
         );
         set_roles(&env, &project_id, &roles);
+        clear_reentrancy_lock(&env, ReentrancyLock::RemoveRole, &project_id);
         Ok(())
     }
 
     // -- pause control --
     pub fn pause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::PauseContract)?;
         require_owner(&env, &caller)?;
         env.storage().persistent().set(&Symbol::new(&env, PAUSED_KEY), &true);
         Ok(())
     }
 
     pub fn unpause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::UnpauseContract)?;
         require_owner(&env, &caller)?;
         env.storage().persistent().set(&Symbol::new(&env, PAUSED_KEY), &false);
         Ok(())
@@ -310,7 +310,7 @@ impl ProjectContract {
         currency: String,
         expiry: Option<u64>
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocCash)?;
+        non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
 
@@ -328,7 +328,7 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceAllocated {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee,
                     currency_or_item: currency,
                     amount,
@@ -336,6 +336,7 @@ impl ProjectContract {
             ),
             ()
         );
+        clear_reentrancy_lock(&env, ReentrancyLock::AllocCash, &project_id);
         Ok(())
     }
 
@@ -347,7 +348,7 @@ impl ProjectContract {
         amount: u64,
         vendor: Option<Address>
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::ClaimCash)?;
+        non_reentrant(&env, ReentrancyLock::ClaimCash, &project_id)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
 
         let mut allowances: Map<(Address, String), CashAllowance> = env
@@ -386,14 +387,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: caller,
                     amount,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::ClaimCash, &project_id);
         Ok(())
     }
 
@@ -406,7 +407,7 @@ impl ProjectContract {
         quantity: u64,
         expiry: Option<u64>
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocItem)?;
+        non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
 
@@ -425,7 +426,7 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceAllocated {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee,
                     currency_or_item: item_id,
                     amount: quantity,
@@ -433,6 +434,7 @@ impl ProjectContract {
             ),
             ()
         );
+        clear_reentrancy_lock(&env, ReentrancyLock::AllocItem, &project_id);
         Ok(())
     }
 
@@ -444,7 +446,7 @@ impl ProjectContract {
         item_id: String,
         quantity: u64
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::ClaimItem)?;
+        non_reentrant(&env, ReentrancyLock::ClaimItem, &project_id)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
 
         let mut allowances: Map<(Address, String), ItemAllowance> = env
@@ -481,14 +483,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: caller,
                     amount: quantity,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::ClaimItem, &project_id);
         Ok(())
     }
 
@@ -499,7 +501,7 @@ impl ProjectContract {
         project_id: String,
         allowances: Vec<(Address, String, u64, Option<u64>)>
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocCashBatch)?;
+        non_reentrant(&env, ReentrancyLock::AllocCashBatch, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
 
@@ -531,7 +533,7 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .set(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()), &allowances_map);
-
+        clear_reentrancy_lock(&env, ReentrancyLock::AllocCashBatch, &project_id);
         Ok(())
     }
 
@@ -541,7 +543,7 @@ impl ProjectContract {
         project_id: String,
         allowances: Vec<(Address, String, u64, Option<u64>)>
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocItemBatch)?;
+        non_reentrant(&env, ReentrancyLock::AllocItemBatch, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
 
@@ -573,7 +575,7 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .set(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()), &allowances_map);
-
+        clear_reentrancy_lock(&env, ReentrancyLock::AllocItemBatch, &project_id);
         Ok(())
     }
 
@@ -586,7 +588,7 @@ impl ProjectContract {
         currency: String,
         amount: u64
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::TransferCash)?;
+        non_reentrant(&env, ReentrancyLock::TransferCash, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
 
@@ -623,14 +625,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: caller,
                     amount,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::TransferCash, &project_id);
         Ok(())
     }
 
@@ -642,7 +644,7 @@ impl ProjectContract {
         item_id: String,
         quantity: u64
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::TransferItem)?;
+        non_reentrant(&env, ReentrancyLock::TransferItem, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
 
@@ -679,14 +681,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: caller,
                     amount: quantity,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::TransferItem, &project_id);
         Ok(())
     }
 
@@ -698,9 +700,9 @@ impl ProjectContract {
         item_id: String,
         quantity: u64
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::RedeemItem)?;
-        check_paused(&env)?;
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
+        non_reentrant(&env, ReentrancyLock::RedeemItem, &project_id)?;
+        check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, "vendor")?;
         let mut allowances: Map<(Address, String), ItemAllowance> = env
@@ -732,14 +734,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: vendor,
                     amount: quantity,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::RedeemItem, &project_id);
         Ok(())
     }
 
@@ -750,10 +752,9 @@ impl ProjectContract {
         currency: String,
         amount: u64
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::RedeemCash)?;
-
-        check_paused(&env)?;
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
+        non_reentrant(&env, ReentrancyLock::RedeemCash, &project_id)?;
+        check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, "vendor")?;
 
@@ -787,14 +788,14 @@ impl ProjectContract {
         env.events().publish(
             (
                 AllowanceClaimed {
-                    project_id,
+                    project_id: project_id.clone(),
                     allowee: vendor,
                     amount,
                 },
             ),
             ()
         );
-
+        clear_reentrancy_lock(&env, ReentrancyLock::RedeemCash, &project_id);
         Ok(())
     }
 
@@ -989,7 +990,11 @@ fn to_soroban_vec<T>(env: &Env, iter: impl IntoIterator<Item = T>) -> Vec<T>
     result
 }
 
-fn non_reentrant(env: &Env, lock_type: ReentrancyLock) -> Result<(), ContractError> {
+fn non_reentrant(
+    env: &Env,
+    lock_type: ReentrancyLock,
+    project_id: &String
+) -> Result<(), ContractError> {
     // skip check for read-only functions
     match lock_type {
         | ReentrancyLock::GetCashAllowance
@@ -1004,7 +1009,7 @@ fn non_reentrant(env: &Env, lock_type: ReentrancyLock) -> Result<(), ContractErr
         _ => {}
     }
 
-    let lock_key = lock_type.to_symbol(env);
+    let lock_key = (lock_type.to_symbol(env), project_id.clone());
     if env.storage().persistent().has(&lock_key) {
         return Err(ContractError::ReentrancyDetected);
     }
@@ -1014,6 +1019,11 @@ fn non_reentrant(env: &Env, lock_type: ReentrancyLock) -> Result<(), ContractErr
 
 fn check_role_limits(vec: &Vec<Address>, member: &Address) -> Result<(), ContractError> {
     if vec.contains(member) { Err(ContractError::RoleAlreadyExists) } else { Ok(()) }
+}
+
+fn clear_reentrancy_lock(env: &Env, lock_type: ReentrancyLock, project_id: &String) {
+    let lock_key = (lock_type.to_symbol(env), project_id.clone());
+    env.storage().persistent().remove(&lock_key);
 }
 
 #[cfg(test)]

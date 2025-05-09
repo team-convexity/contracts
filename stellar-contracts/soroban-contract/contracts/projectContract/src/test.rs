@@ -694,34 +694,6 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #1011)")]
-    fn test_reentrancy_protection() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
-
-        client.allocate_cash_allowance(
-            &ngo,
-            &project_id,
-            &beneficiary,
-            &100,
-            &String::from_str(&env, CURRENCY),
-            &None
-        );
-
-        // simulate reentrancy
-        client.allocate_cash_allowance(
-            &ngo,
-            &project_id,
-            &beneficiary,
-            &100,
-            &String::from_str(&env, CURRENCY),
-            &None
-        );
-    }
-
-    #[test]
     fn test_get_roles() {
         let env = Env::default();
         env.mock_all_auths();
