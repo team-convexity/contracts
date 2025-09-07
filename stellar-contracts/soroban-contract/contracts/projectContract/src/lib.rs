@@ -172,6 +172,9 @@ const VERSION_KEY: &str = "version";
 const CASH_ALLOWANCES_KEY: &str = "cash";
 const ITEM_ALLOWANCES_KEY: &str = "items";
 
+// reentrancy lock window duration.
+const LOCK_WINDOW_SECS: u64 = 5; // 5-second lock window
+
 // -- events --
 #[contracttype]
 pub struct RoleAssigned {
@@ -985,8 +988,8 @@ fn non_reentrant(
 ) -> Result<(), ContractError> {
     let lock_key = (lock_type.to_symbol(env), project_id.clone());
     if let Some(timestamp) = env.storage().persistent().get::<_, u64>(&lock_key) {
-        // if lock is still valid (10 second expiry)
-        if env.ledger().timestamp() <= timestamp.saturating_add(10_000) {
+    // if lock is still valid (or expiry)
+    if env.ledger().timestamp() <= timestamp.saturating_add(LOCK_WINDOW_SECS) {
             return Err(ContractError::ReentrancyDetected);
         }
     }
