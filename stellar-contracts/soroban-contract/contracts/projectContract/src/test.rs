@@ -905,4 +905,23 @@ mod test {
             &None,
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1013)")]
+    fn test_role_member_limit_enforced() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _sa, _ngo, _beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // fill up NGO role to capacity (1000)
+        for _ in 0..1000 {
+            let addr = Address::generate(&env);
+            client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &addr);
+        }
+
+        // adding one more; should panic with RoleLimitExceeded (1013)
+        let extra = Address::generate(&env);
+        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &extra);
+    }
 }

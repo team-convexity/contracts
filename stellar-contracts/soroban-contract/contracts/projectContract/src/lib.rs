@@ -54,6 +54,7 @@ pub enum ContractError {
     RoleAlreadyExists,
     ReentrancyDetected,
     InvalidInput,
+    RoleLimitExceeded,
 }
 
 #[derive(Clone)]
@@ -135,6 +136,7 @@ impl TryFrom<ContractError> for soroban_sdk::Error {
             ContractError::RoleAlreadyExists => Ok(soroban_sdk::Error::from_contract_error(1009)),
             ContractError::ReentrancyDetected => Ok(soroban_sdk::Error::from_contract_error(1011)),
             ContractError::InvalidInput => Ok(soroban_sdk::Error::from_contract_error(1012)),
+            ContractError::RoleLimitExceeded => Ok(soroban_sdk::Error::from_contract_error(1013)),
         }
     }
 }
@@ -153,6 +155,7 @@ impl From<&ContractError> for soroban_sdk::Error {
             ContractError::RoleAlreadyExists => soroban_sdk::Error::from_contract_error(1009),
             ContractError::ReentrancyDetected => soroban_sdk::Error::from_contract_error(1011),
             ContractError::InvalidInput => soroban_sdk::Error::from_contract_error(1012),
+            ContractError::RoleLimitExceeded => soroban_sdk::Error::from_contract_error(1013),
         }
     }
 }
@@ -167,14 +170,12 @@ const ITEM_ALLOWANCES_KEY: &str = "items";
 const PAUSE_UNTIL_KEY: &str = "pause_until";
 const CONTRACT_ADMINS_KEY: &str = "contract_admins";
 
-// reentrancy lock window duration.
-const LOCK_WINDOW_SECS: u64 = 5; // 5-second lock window
-
-// Validation limits
+// validation limits
 const MAX_ID_LEN: u32 = 100; // max length for project_id, currency, item_id. Check Project service's README for more info.
 const MAX_BATCH_LEN: u32 = 200; // cap batch sizes to avoid excessive compute
 const MAX_EXPIRY_AHEAD_SECS: u64 = 31_536_000; // ~365 days
 const PAUSE_MAX_SECS: u64 = 3600; // max pause window
+const MAX_ROLE_MEMBERS: u32 = 1000; // per-role membership cap per project (and for global contract admins)
 
 // -- events --
 #[contracttype]
@@ -221,27 +222,32 @@ impl ProjectContract {
         role: String,
         new_member: Address,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
         require_owner(&env, &caller)?;
         is_valid_identifier(&env, &project_id)?;
 
         let member_clone = new_member.clone();
         let mut roles = get_roles(&env, &project_id);
 
+        // Perform all validations first, then take the lock only for the mutation window.
         if role == String::from_str(&env, "super_admin") {
             check_role_limits(&roles.super_admins, &new_member)?;
+            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
             roles.super_admins.push_back(member_clone.clone());
         } else if role == String::from_str(&env, "admin") {
             check_role_limits(&roles.admins, &new_member)?;
+            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
             roles.admins.push_back(member_clone.clone());
         } else if role == String::from_str(&env, "ngo") {
             check_role_limits(&roles.ngos, &new_member)?;
+            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
             roles.ngos.push_back(member_clone.clone());
         } else if role == String::from_str(&env, "vendor") {
             check_role_limits(&roles.vendors, &new_member)?;
+            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
             roles.vendors.push_back(member_clone.clone());
         } else if role == String::from_str(&env, "beneficiary") {
             check_role_limits(&roles.beneficiaries, &new_member)?;
+            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
             roles.beneficiaries.push_back(member_clone.clone());
         } else {
             return Err(ContractError::InvalidRole);
@@ -256,6 +262,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::AddRole, &project_id);
         Ok(())
     }
 
@@ -266,7 +273,6 @@ impl ProjectContract {
         role: String,
         member_to_remove: Address,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::RemoveRole, &project_id)?;
         require_owner(&env, &caller)?;
         is_valid_identifier(&env, &project_id)?;
         let mut roles = get_roles(&env, &project_id);
@@ -285,8 +291,11 @@ impl ProjectContract {
             return Err(ContractError::InvalidRole);
         };
 
+        // take lock for mutation window
+        non_reentrant(&env, ReentrancyLock::RemoveRole, &project_id)?;
         *vec = to_soroban_vec(&env, vec.iter().filter(|m| *m != member_to_remove));
         set_roles(&env, &project_id, &roles);
+        release_lock(&env, ReentrancyLock::RemoveRole, &project_id);
         Ok(())
     }
 
@@ -349,7 +358,6 @@ impl ProjectContract {
         currency: String,
         expiry: Option<u64>,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
         is_valid_amount(amount)?;
@@ -363,6 +371,8 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
             .unwrap_or_else(|| Map::new(&env));
 
+        // lock and mutate
+        non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
         allowances.set(
             (allowee.clone(), currency.clone()),
             CashAllowance { amount, expiry },
@@ -381,6 +391,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::AllocCash, &project_id);
         Ok(())
     }
 
@@ -392,7 +403,6 @@ impl ProjectContract {
         amount: u64,
         vendor: Option<Address>,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::ClaimCash, &project_id)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &currency)?;
@@ -409,6 +419,8 @@ impl ProjectContract {
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, ben_allowance.expiry)?;
+        // lock and perform mutations
+        non_reentrant(&env, ReentrancyLock::ClaimCash, &project_id)?;
         if ben_allowance.amount < amount {
             return Err(ContractError::InsufficientFunds);
         }
@@ -443,6 +455,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::ClaimCash, &project_id);
         Ok(())
     }
 
@@ -455,7 +468,6 @@ impl ProjectContract {
         quantity: u64,
         expiry: Option<u64>,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
         is_valid_quantity(quantity)?;
@@ -469,6 +481,7 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
             .unwrap_or_else(|| Map::new(&env));
 
+        non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
         allowances.set(
             (allowee.clone(), item_id.clone()),
             ItemAllowance { quantity, expiry },
@@ -488,6 +501,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::AllocItem, &project_id);
         Ok(())
     }
 
@@ -499,7 +513,6 @@ impl ProjectContract {
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::ClaimItem, &project_id)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &item_id)?;
@@ -518,6 +531,7 @@ impl ProjectContract {
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, ben_allowance.expiry)?;
+        non_reentrant(&env, ReentrancyLock::ClaimItem, &project_id)?;
         if ben_allowance.quantity < quantity {
             return Err(ContractError::InsufficientFunds);
         }
@@ -547,6 +561,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::ClaimItem, &project_id);
         Ok(())
     }
 
@@ -557,7 +572,6 @@ impl ProjectContract {
         project_id: String,
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocCashBatch, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
         is_valid_identifier(&env, &project_id)?;
@@ -569,6 +583,7 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
             .unwrap_or_else(|| Map::new(&env));
 
+        non_reentrant(&env, ReentrancyLock::AllocCashBatch, &project_id)?;
         for (allowee, currency, amount, expiry) in allowances {
             is_valid_amount(amount)?;
             is_valid_identifier(&env, &currency)?;
@@ -593,6 +608,7 @@ impl ProjectContract {
             &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
             &allowances_map,
         );
+        release_lock(&env, ReentrancyLock::AllocCashBatch, &project_id);
         Ok(())
     }
 
@@ -602,7 +618,6 @@ impl ProjectContract {
         project_id: String,
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::AllocItemBatch, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "ngo")?;
         is_valid_identifier(&env, &project_id)?;
@@ -614,6 +629,7 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
             .unwrap_or_else(|| Map::new(&env));
 
+        non_reentrant(&env, ReentrancyLock::AllocItemBatch, &project_id)?;
         for (allowee, item_id, quantity, expiry) in allowances {
             is_valid_quantity(quantity)?;
             is_valid_identifier(&env, &item_id)?;
@@ -638,6 +654,7 @@ impl ProjectContract {
             &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
             &allowances_map,
         );
+        release_lock(&env, ReentrancyLock::AllocItemBatch, &project_id);
         Ok(())
     }
 
@@ -650,7 +667,6 @@ impl ProjectContract {
         currency: String,
         amount: u64,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::TransferCash, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
         is_valid_identifier(&env, &project_id)?;
@@ -668,6 +684,7 @@ impl ProjectContract {
             .get((caller.clone(), currency.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        non_reentrant(&env, ReentrancyLock::TransferCash, &project_id)?;
         if src_allowance.amount < amount {
             return Err(ContractError::InsufficientFunds);
         }
@@ -697,6 +714,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::TransferCash, &project_id);
         Ok(())
     }
 
@@ -708,7 +726,6 @@ impl ProjectContract {
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
-        non_reentrant(&env, ReentrancyLock::TransferItem, &project_id)?;
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, "beneficiary")?;
         is_valid_identifier(&env, &project_id)?;
@@ -726,6 +743,7 @@ impl ProjectContract {
             .get((caller.clone(), item_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        non_reentrant(&env, ReentrancyLock::TransferItem, &project_id)?;
         if src_allowance.quantity < quantity {
             return Err(ContractError::InsufficientFunds);
         }
@@ -755,6 +773,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::TransferItem, &project_id);
         Ok(())
     }
 
@@ -767,7 +786,6 @@ impl ProjectContract {
         quantity: u64,
     ) -> Result<(), ContractError> {
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
-        non_reentrant(&env, ReentrancyLock::RedeemItem, &project_id)?;
         check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, "vendor")?;
@@ -784,6 +802,7 @@ impl ProjectContract {
             .get((vendor.clone(), item_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        non_reentrant(&env, ReentrancyLock::RedeemItem, &project_id)?;
         if vendor_allowance.quantity < quantity {
             return Err(ContractError::InsufficientFunds);
         }
@@ -809,6 +828,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::RedeemItem, &project_id);
         Ok(())
     }
 
@@ -820,7 +840,6 @@ impl ProjectContract {
         amount: u64,
     ) -> Result<(), ContractError> {
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
-        non_reentrant(&env, ReentrancyLock::RedeemCash, &project_id)?;
         check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, "vendor")?;
@@ -839,6 +858,7 @@ impl ProjectContract {
             .get(key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        non_reentrant(&env, ReentrancyLock::RedeemCash, &project_id)?;
         if vendor_allowance.amount < amount {
             return Err(ContractError::InsufficientFunds);
         }
@@ -864,6 +884,7 @@ impl ProjectContract {
             },),
             (),
         );
+        release_lock(&env, ReentrancyLock::RedeemCash, &project_id);
         Ok(())
     }
 
@@ -1193,25 +1214,28 @@ fn non_reentrant(
     project_id: &String,
 ) -> Result<(), ContractError> {
     let lock_key = (lock_type.to_symbol(env), project_id.clone());
-    if let Some(timestamp) = env.storage().persistent().get::<_, u64>(&lock_key) {
-        // if lock is still valid (or expiry)
-        if env.ledger().timestamp() <= timestamp.saturating_add(LOCK_WINDOW_SECS) {
-            return Err(ContractError::ReentrancyDetected);
-        }
+    if env.storage().temporary().has(&lock_key) {
+        return Err(ContractError::ReentrancyDetected);
     }
-
-    env.storage()
-        .persistent()
-        .set(&lock_key, &env.ledger().timestamp());
-
+    env.storage().temporary().set(&lock_key, &true);
     Ok(())
 }
+
+fn release_lock(env: &Env, lock_type: ReentrancyLock, project_id: &String) {
+    let lock_key = (lock_type.to_symbol(env), project_id.clone());
+    if env.storage().temporary().has(&lock_key) {
+        env.storage().temporary().remove(&lock_key);
+    }
+}
+
 fn check_role_limits(vec: &Vec<Address>, member: &Address) -> Result<(), ContractError> {
     if vec.contains(member) {
-        Err(ContractError::RoleAlreadyExists)
-    } else {
-        Ok(())
+        return Err(ContractError::RoleAlreadyExists);
     }
+    if vec.len() >= MAX_ROLE_MEMBERS {
+        return Err(ContractError::RoleLimitExceeded);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
