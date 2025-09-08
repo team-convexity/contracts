@@ -234,6 +234,13 @@ pub struct ContractAdminRemovedEvent {
 
 #[contractimpl]
 impl ProjectContract {
+    /// Initializes the contract owner.
+    ///
+    /// # Arguments
+    /// - `owner`: address to set as the owner.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
     pub fn initialize(env: Env, owner: Address) {
         owner.require_auth();
         env.storage()
@@ -245,6 +252,21 @@ impl ProjectContract {
     }
 
     // -- role management --
+    /// Adds a role member to a project.
+    ///
+    /// # Arguments
+    /// - `caller`: owner address.
+    /// - `project_id`: project identifier.
+    /// - `role`: one of "super_admin", "admin", "ngo", "vendor", "beneficiary".
+    /// - `new_member`: address to add.
+    ///
+    /// # Errors
+    /// - `ContractError::InvalidRole`
+    /// - `ContractError::RoleAlreadyExists`
+    /// - `ContractError::RoleLimitExceeded`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn add_role(
         env: Env,
         caller: Address,
@@ -296,6 +318,18 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Removes a role member from a project.
+    ///
+    /// # Arguments
+    /// - `caller`: owner address.
+    /// - `project_id`: project identifier.
+    /// - `role`: role name.
+    /// - `member_to_remove`: address to remove.
+    ///
+    /// # Errors
+    /// - `ContractError::InvalidRole`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn remove_role(
         env: Env,
         caller: Address,
@@ -338,6 +372,13 @@ impl ProjectContract {
     }
 
     // -- pause control --
+    /// Pauses the contract for a short window.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
     pub fn pause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
         require_owner_or_contract_admin(&env, &caller)?;
         env.storage()
@@ -352,6 +393,13 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Unpauses the contract immediately.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
     pub fn unpause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
         require_owner_or_contract_admin(&env, &caller)?;
         env.storage()
@@ -365,6 +413,17 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Adds a global contract admin.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    /// - `new_admin`: address to grant admin rights.
+    ///
+    /// # Errors
+    /// - `ContractError::RoleAlreadyExists`
+    /// - `ContractError::RoleLimitExceeded`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::InvalidInput`
     pub fn add_contract_admin(
         env: Env,
         caller: Address,
@@ -385,6 +444,14 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Removes a global contract admin.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    /// - `admin`: admin address to remove.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
     pub fn remove_contract_admin(
         env: Env,
         caller: Address,
@@ -405,6 +472,21 @@ impl ProjectContract {
     }
 
     // -- allowance management --
+    /// Allocates a cash allowance.
+    ///
+    /// # Arguments
+    /// - `caller`: ngo address.
+    /// - `project_id`: project identifier.
+    /// - `allowee`: beneficiary/vendor.
+    /// - `amount`: positive amount.
+    /// - `currency`: currency code.
+    /// - `expiry`: future timestamp or none.
+    ///
+    /// # Errors
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn allocate_cash_allowance(
         env: Env,
         caller: Address,
@@ -451,6 +533,22 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Claims a cash allowance, optionally crediting a vendor.
+    ///
+    /// # Arguments
+    /// - `caller`: beneficiary address.
+    /// - `project_id`: project identifier.
+    /// - `currency`: currency code.
+    /// - `amount`: positive amount.
+    /// - `vendor`: optional vendor to credit.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::ExpiredAllowance`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn claim_cash_allowance(
         env: Env,
         caller: Address,
@@ -515,6 +613,21 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Allocates an item allowance.
+    ///
+    /// # Arguments
+    /// - `caller`: ngo address.
+    /// - `project_id`: project identifier.
+    /// - `allowee`: beneficiary/vendor.
+    /// - `item_id`: item identifier.
+    /// - `quantity`: positive quantity.
+    /// - `expiry`: future timestamp or none.
+    ///
+    /// # Errors
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn allocate_item_allowance(
         env: Env,
         caller: Address,
@@ -561,6 +674,22 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Claims an item allowance and credits a vendor.
+    ///
+    /// # Arguments
+    /// - `caller`: beneficiary address.
+    /// - `vendor`: vendor address.
+    /// - `project_id`: project identifier.
+    /// - `item_id`: item identifier.
+    /// - `quantity`: positive quantity.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::ExpiredAllowance`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn claim_item_allowance(
         env: Env,
         caller: Address,
@@ -622,6 +751,18 @@ impl ProjectContract {
     }
 
     // -- batch operations --
+    /// Allocates multiple cash allowances.
+    ///
+    /// # Arguments
+    /// - `caller`: ngo address.
+    /// - `project_id`: project identifier.
+    /// - `allowances`: tuples of (allowee, currency, amount, expiry).
+    ///
+    /// # Errors
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn allocate_cash_allowances_batch(
         env: Env,
         caller: Address,
@@ -673,6 +814,18 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Allocates multiple item allowances.
+    ///
+    /// # Arguments
+    /// - `caller`: ngo address.
+    /// - `project_id`: project identifier.
+    /// - `allowances`: tuples of (allowee, item_id, quantity, expiry).
+    ///
+    /// # Errors
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn allocate_item_allowances_batch(
         env: Env,
         caller: Address,
@@ -723,6 +876,21 @@ impl ProjectContract {
     }
 
     // -- transfer functions --
+    /// Transfers a cash allowance to another address.
+    ///
+    /// # Arguments
+    /// - `caller`: beneficiary address.
+    /// - `project_id`: project identifier.
+    /// - `new_allowee`: recipient address.
+    /// - `currency`: currency code.
+    /// - `amount`: positive amount.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn transfer_cash_allowance(
         env: Env,
         caller: Address,
@@ -782,6 +950,21 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Transfers an item allowance to another address.
+    ///
+    /// # Arguments
+    /// - `caller`: beneficiary address.
+    /// - `project_id`: project identifier.
+    /// - `new_allowee`: recipient address.
+    /// - `item_id`: item identifier.
+    /// - `quantity`: positive quantity.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn transfer_item_allowance(
         env: Env,
         caller: Address,
@@ -842,6 +1025,21 @@ impl ProjectContract {
     }
 
     // -- redemption functions --
+    /// Redeems item claims credited to a vendor.
+    ///
+    /// # Arguments
+    /// - `vendor`: vendor address.
+    /// - `project_id`: optional project id (defaults to "default_project").
+    /// - `item_id`: item identifier.
+    /// - `quantity`: quantity to redeem.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn redeem_item_claims(
         env: Env,
         vendor: Address,
@@ -896,6 +1094,21 @@ impl ProjectContract {
         Ok(())
     }
 
+    /// Redeems cash claims credited to a vendor.
+    ///
+    /// # Arguments
+    /// - `vendor`: vendor address.
+    /// - `project_id`: optional project id (defaults to "default_project").
+    /// - `currency`: currency code.
+    /// - `amount`: amount to redeem.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InsufficientFunds`
+    /// - `ContractError::ContractPaused`
+    /// - `ContractError::InvalidInput`
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::ReentrancyDetected`
     pub fn redeem_cash_claims(
         env: Env,
         vendor: Address,
@@ -953,6 +1166,16 @@ impl ProjectContract {
     }
 
     // -- query functions --
+    /// Gets a cash allowance.
+    ///
+    /// # Arguments
+    /// - `project_id`: project identifier.
+    /// - `allowee`: address.
+    /// - `currency`: currency code.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InvalidInput`
     pub fn get_cash_allowance(
         env: Env,
         project_id: String,
@@ -972,6 +1195,16 @@ impl ProjectContract {
             .ok_or(ContractError::AllowanceNotFound)
     }
 
+    /// Gets an item allowance.
+    ///
+    /// # Arguments
+    /// - `project_id`: project identifier.
+    /// - `allowee`: address.
+    /// - `item_id`: item identifier.
+    ///
+    /// # Errors
+    /// - `ContractError::AllowanceNotFound`
+    /// - `ContractError::InvalidInput`
     pub fn get_item_allowance(
         env: Env,
         project_id: String,
@@ -991,6 +1224,10 @@ impl ProjectContract {
             .ok_or(ContractError::AllowanceNotFound)
     }
 
+    /// Lists all cash allowances for a project.
+    ///
+    /// # Arguments
+    /// - `project_id`: project identifier.
     pub fn get_all_cash_allowances(
         env: Env,
         project_id: String,
@@ -1002,6 +1239,10 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env))
     }
 
+    /// Lists all item allowances for a project.
+    ///
+    /// # Arguments
+    /// - `project_id`: project identifier.
     pub fn get_all_item_allowances(
         env: Env,
         project_id: String,
@@ -1013,6 +1254,11 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env))
     }
 
+    /// Sums total cash allowance across projects for a beneficiary.
+    ///
+    /// # Arguments
+    /// - `beneficiary`: address.
+    /// - `project_ids`: list of project identifiers.
     pub fn get_total_cash_allowance(
         env: Env,
         beneficiary: Address,
@@ -1038,6 +1284,11 @@ impl ProjectContract {
         total_amount
     }
 
+    /// Sums total item allowance across projects for a beneficiary.
+    ///
+    /// # Arguments
+    /// - `beneficiary`: address.
+    /// - `project_ids`: list of project identifiers.
     pub fn get_total_item_allowance(
         env: Env,
         beneficiary: Address,
@@ -1061,6 +1312,10 @@ impl ProjectContract {
         total_quantity
     }
 
+    /// Gets roles for a project.
+    ///
+    /// # Arguments
+    /// - `project_id`: project identifier.
     pub fn get_roles(env: Env, project_id: String) -> Roles {
         // Validate project identifier
         let _ = is_valid_identifier(&env, &project_id);
