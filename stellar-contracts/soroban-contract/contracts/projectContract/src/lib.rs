@@ -164,6 +164,8 @@ const PAUSED_KEY: &str = "paused";
 const VERSION_KEY: &str = "version";
 const CASH_ALLOWANCES_KEY: &str = "cash";
 const ITEM_ALLOWANCES_KEY: &str = "items";
+const PAUSE_UNTIL_KEY: &str = "pause_until";
+const CONTRACT_ADMINS_KEY: &str = "contract_admins";
 
 // reentrancy lock window duration.
 const LOCK_WINDOW_SECS: u64 = 5; // 5-second lock window
@@ -172,6 +174,7 @@ const LOCK_WINDOW_SECS: u64 = 5; // 5-second lock window
 const MAX_ID_LEN: u32 = 100; // max length for project_id, currency, item_id. Check Project service's README for more info.
 const MAX_BATCH_LEN: u32 = 200; // cap batch sizes to avoid excessive compute
 const MAX_EXPIRY_AHEAD_SECS: u64 = 31_536_000; // ~365 days
+const PAUSE_MAX_SECS: u64 = 3600; // max pause window
 
 // -- events --
 #[contracttype]
@@ -289,18 +292,50 @@ impl ProjectContract {
 
     // -- pause control --
     pub fn pause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
-        require_owner(&env, &caller)?;
+        require_owner_or_contract_admin(&env, &caller)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, PAUSED_KEY), &true);
+        let until = env.ledger().timestamp().saturating_add(PAUSE_MAX_SECS);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, PAUSE_UNTIL_KEY), &until);
         Ok(())
     }
 
     pub fn unpause_contract(env: Env, caller: Address) -> Result<(), ContractError> {
-        require_owner(&env, &caller)?;
+        require_owner_or_contract_admin(&env, &caller)?;
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, PAUSED_KEY), &false);
+        env.storage()
+            .persistent()
+            .remove(&Symbol::new(&env, PAUSE_UNTIL_KEY));
+        Ok(())
+    }
+
+    pub fn add_contract_admin(
+        env: Env,
+        caller: Address,
+        new_admin: Address,
+    ) -> Result<(), ContractError> {
+        require_owner_or_contract_admin(&env, &caller)?;
+        let mut admins: Vec<Address> = get_contract_admins(&env);
+        check_role_limits(&admins, &new_admin)?;
+        admins.push_back(new_admin);
+        set_contract_admins(&env, &admins);
+        Ok(())
+    }
+
+    pub fn remove_contract_admin(
+        env: Env,
+        caller: Address,
+        admin: Address,
+    ) -> Result<(), ContractError> {
+        require_owner_or_contract_admin(&env, &caller)?;
+        let mut admins: Vec<Address> = get_contract_admins(&env);
+        admins = to_soroban_vec(&env, admins.iter().filter(|a| *a != admin));
+        set_contract_admins(&env, &admins);
         Ok(())
     }
 
@@ -950,16 +985,32 @@ impl ProjectContract {
 
 // -- helper functions --
 fn check_paused(env: &Env) -> Result<(), ContractError> {
-    if env
+    let paused: bool = env
         .storage()
         .persistent()
         .get(&Symbol::new(env, PAUSED_KEY))
-        .unwrap_or(false)
-    {
-        Err(ContractError::ContractPaused)
-    } else {
-        Ok(())
+        .unwrap_or(false);
+    if !paused {
+        return Ok(());
     }
+
+    let now = env.ledger().timestamp();
+    let until: Option<u64> = env
+        .storage()
+        .persistent()
+        .get(&Symbol::new(env, PAUSE_UNTIL_KEY));
+    if let Some(u) = until {
+        if now >= u {
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(env, PAUSED_KEY), &false);
+            env.storage()
+                .persistent()
+                .remove(&Symbol::new(env, PAUSE_UNTIL_KEY));
+            return Ok(());
+        }
+    }
+    Err(ContractError::ContractPaused)
 }
 
 fn check_expiry(env: &Env, expiry: Option<u64>) -> Result<(), ContractError> {
@@ -1073,6 +1124,37 @@ fn require_role(
     } else {
         Err(ContractError::Unauthorized)
     }
+}
+
+fn get_contract_admins(env: &Env) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&Symbol::new(env, CONTRACT_ADMINS_KEY))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+fn set_contract_admins(env: &Env, admins: &Vec<Address>) {
+    env.storage()
+        .persistent()
+        .set(&Symbol::new(env, CONTRACT_ADMINS_KEY), admins);
+}
+
+fn require_owner_or_contract_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
+    caller.require_auth();
+    if let Some(owner) = env
+        .storage()
+        .persistent()
+        .get::<_, Address>(&Symbol::new(env, OWNER_KEY))
+    {
+        if &owner == caller {
+            return Ok(());
+        }
+    }
+    let admins = get_contract_admins(env);
+    if admins.contains(caller) {
+        return Ok(());
+    }
+    Err(ContractError::Unauthorized)
 }
 
 fn get_roles(env: &Env, project_id: &String) -> Roles {

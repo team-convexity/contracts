@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
     use soroban_sdk::testutils::Ledger;
-    use soroban_sdk::{testutils::Address as _, vec, Address, Env, Map, String, Symbol};
+    use soroban_sdk::{testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec};
 
     use crate::{
         CashAllowance, ItemAllowance, ProjectContract, ProjectContractClient, Roles,
@@ -619,7 +619,7 @@ mod test {
     fn test_pause_unpause_contract() {
         let env = Env::default();
         env.mock_all_auths();
-        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let (client, owner, _super_admin, _ngo, _beneficiary, _vendor) = setup_contract(&env);
 
         client.pause_contract(&owner);
 
@@ -644,22 +644,171 @@ mod test {
     }
 
     #[test]
+    fn test_contract_admin_can_manage_admins() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin1, _ngo, _beneficiary, _vendor) = setup_contract(&env);
+        let admin2 = Address::generate(&env);
+
+        // owner adds first admin
+        client.add_contract_admin(&owner, &admin1);
+
+        // admin1 adds admin2
+        client.add_contract_admin(&admin1, &admin2);
+
+        // verify both present
+        let admins: Vec<Address> = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "contract_admins"))
+                .unwrap_or_else(|| Vec::new(&env))
+        });
+        assert!(admins.contains(admin1.clone()));
+        assert!(admins.contains(admin2.clone()));
+
+        // admin2 removes admin1
+        client.remove_contract_admin(&admin2, &admin1);
+        let admins: Vec<Address> = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "contract_admins"))
+                .unwrap_or_else(|| Vec::new(&env))
+        });
+        assert!(!admins.contains(admin1));
+        assert!(admins.contains(admin2));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_non_admin_cannot_manage_admins() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, _beneficiary, _vendor) = setup_contract(&env);
+        let someone = Address::generate(&env);
+        client.add_contract_admin(&ngo, &someone);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_removed_admin_cannot_manage_admins() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin1, _ngo, _beneficiary, _vendor) = setup_contract(&env);
+        client.add_contract_admin(&owner, &admin1);
+        client.remove_contract_admin(&owner, &admin1);
+        // admin1 no longer authorized
+        let admin2 = Address::generate(&env);
+        client.add_contract_admin(&admin1, &admin2);
+    }
+
+    #[test]
+    fn test_contract_admin_can_pause_unpause() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, super_admin, _ngo, _beneficiary, _vendor) = setup_contract(&env);
+
+        // add a ContractAdmin
+        client.add_contract_admin(&owner, &super_admin);
+        client.pause_contract(&super_admin);
+        let paused: bool = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "paused"))
+                .unwrap_or(false)
+        });
+        assert!(paused);
+
+        client.unpause_contract(&super_admin);
+        let paused: bool = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "paused"))
+                .unwrap_or(false)
+        });
+        assert!(!paused);
+    }
+
+    #[test]
     #[should_panic(expected = "Error(Contract, #1005)")]
     fn test_operation_while_paused() {
         let env = Env::default();
         env.mock_all_auths();
-        let (client, owner, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let (client, owner, _sa, ngo, beneficiary, _) = setup_contract(&env);
 
         client.pause_contract(&owner);
         client.allocate_cash_allowance(
             &ngo,
-            &project_id,
+            &String::from_str(&env, PROJECT_ID),
             &beneficiary,
             &100,
             &String::from_str(&env, CURRENCY),
             &None,
         );
+    }
+
+    #[test]
+    fn test_pause_timelock_auto_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // pause at a known timestamp
+        env.ledger().with_mut(|l| l.timestamp = 1_000);
+        client.pause_contract(&owner);
+
+        // verify paused flag is set during timelock
+        let paused: bool = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&Symbol::new(&env, "paused"))
+                .unwrap_or(false)
+        });
+        assert!(paused);
+
+        // advance past timelock and ensure operations succeed
+        env.ledger().with_mut(|l| l.timestamp = 1_000 + 3_601);
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &10,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_unauthorized_cannot_pause() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, _beneficiary, _vendor) = setup_contract(&env);
+        // not owner or contract admin
+        client.pause_contract(&ngo);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_unauthorized_cannot_unpause() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _sa, ngo, _beneficiary, _vendor) = setup_contract(&env);
+        client.pause_contract(&owner);
+        // not owner or contract admin
+        client.unpause_contract(&ngo);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_removed_contract_admin_cannot_pause() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, super_admin, _ngo, _beneficiary, _vendor) = setup_contract(&env);
+        client.add_contract_admin(&owner, &super_admin);
+        client.remove_contract_admin(&owner, &super_admin);
+        // should no longer have rights
+        client.pause_contract(&super_admin);
     }
 
     #[test]
