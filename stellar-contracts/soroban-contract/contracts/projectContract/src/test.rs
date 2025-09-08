@@ -924,4 +924,274 @@ mod test {
         let extra = Address::generate(&env);
         client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &extra);
     }
+
+    #[test]
+    fn test_cash_allocation_accumulates_and_merges_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        env.ledger().with_mut(|l| l.timestamp = 1_000);
+        let now = env.ledger().timestamp();
+        let e1 = now + 1_000;
+        let e2 = now + 5_000;
+
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &100,
+            &String::from_str(&env, CURRENCY),
+            &Some(e1),
+        );
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &50,
+            &String::from_str(&env, CURRENCY),
+            &Some(e2),
+        );
+
+        let allowances: Map<(Address, String), CashAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+                    .unwrap()
+            });
+        let entry = allowances
+            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
+            .unwrap();
+        assert_eq!(entry.amount, 150);
+        assert_eq!(entry.expiry, Some(e2));
+    }
+
+    #[test]
+    fn test_item_allocation_accumulates_and_merges_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        env.ledger().with_mut(|l| l.timestamp = 2_000);
+        let now = env.ledger().timestamp();
+        let e1 = now + 1_000;
+        let e2 = now + 2_000;
+
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &10,
+            &Some(e1),
+        );
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &5,
+            &Some(e2),
+        );
+
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+                    .unwrap()
+            });
+        let entry = allowances
+            .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
+            .unwrap();
+        assert_eq!(entry.quantity, 15);
+        assert_eq!(entry.expiry, Some(e2));
+    }
+
+    #[test]
+    fn test_allocation_unbounded_expiry_policy() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // existing None, new Some -> stays None
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &10,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &5,
+            &String::from_str(&env, CURRENCY),
+            &Some(999_999),
+        );
+        let allowances: Map<(Address, String), CashAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+                    .unwrap()
+            });
+        let entry1 = allowances
+            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
+            .unwrap();
+        assert_eq!(entry1.amount, 15);
+        assert_eq!(entry1.expiry, None);
+
+        // existing Some, new None -> keep existing Some
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &1,
+            &Some(111_111),
+        );
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &1,
+            &None,
+        );
+        let items: Map<(Address, String), ItemAllowance> = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+                .unwrap()
+        });
+        let entry2 = items
+            .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
+            .unwrap();
+        assert_eq!(entry2.quantity, 2);
+        assert_eq!(entry2.expiry, Some(111_111));
+    }
+
+    #[test]
+    fn test_batch_cash_allocation_accumulates_and_merges() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        env.ledger().with_mut(|l| l.timestamp = 3_000);
+        let now = env.ledger().timestamp();
+        let allowances = vec![
+            &env,
+            (
+                beneficiary.clone(),
+                String::from_str(&env, CURRENCY),
+                10,
+                Some(now + 1_000),
+            ),
+            (
+                beneficiary.clone(),
+                String::from_str(&env, CURRENCY),
+                20,
+                Some(now + 2_000),
+            ),
+        ];
+        client.allocate_cash_allowances_batch(&ngo, &project_id, &allowances);
+
+        let map: Map<(Address, String), CashAllowance> = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+                .unwrap()
+        });
+        let entry = map
+            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
+            .unwrap();
+        assert_eq!(entry.amount, 30);
+        assert_eq!(entry.expiry, Some(now + 2_000));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1005)")]
+    fn test_batch_allocation_paused_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _sa, ngo, beneficiary, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        client.pause_contract(&owner);
+        let allowances = vec![
+            &env,
+            (
+                beneficiary.clone(),
+                String::from_str(&env, CURRENCY),
+                10,
+                None,
+            ),
+        ];
+        client.allocate_cash_allowances_batch(&ngo, &project_id, &allowances);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_claim_cash_with_non_vendor_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // allocate to beneficiary
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &100,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+
+        // try to claim to a non-vendor address
+        let not_vendor = Address::generate(&env);
+        client.claim_cash_allowance(
+            &beneficiary,
+            &project_id,
+            &String::from_str(&env, CURRENCY),
+            &50,
+            &Some(not_vendor),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_allocation_overflow_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // first large allocation
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &(u64::MAX - 1),
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+        // this should overflow
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &2,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+    }
 }

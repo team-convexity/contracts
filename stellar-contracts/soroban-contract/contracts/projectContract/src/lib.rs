@@ -509,12 +509,22 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
             .unwrap_or_else(|| Map::new(&env));
 
-        // lock and mutate
+        // lock and mutate (accumulate if an entry already exists)
         non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
-        allowances.set(
-            (allowee.clone(), currency.clone()),
-            CashAllowance { amount, expiry },
-        );
+        let key = (allowee.clone(), currency.clone());
+        if let Some(existing) = allowances.get(key.clone()) {
+            let new_amount = is_valid_sum(existing.amount, amount)?;
+            let new_expiry = merge_expiry(existing.expiry, expiry);
+            allowances.set(
+                key,
+                CashAllowance {
+                    amount: new_amount,
+                    expiry: new_expiry,
+                },
+            );
+        } else {
+            allowances.set(key, CashAllowance { amount, expiry });
+        }
         env.storage().persistent().set(
             &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
             &allowances,
@@ -651,10 +661,20 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
-        allowances.set(
-            (allowee.clone(), item_id.clone()),
-            ItemAllowance { quantity, expiry },
-        );
+        let key = (allowee.clone(), item_id.clone());
+        if let Some(existing) = allowances.get(key.clone()) {
+            let new_qty = is_valid_sum(existing.quantity, quantity)?;
+            let new_expiry = merge_expiry(existing.expiry, expiry);
+            allowances.set(
+                key,
+                ItemAllowance {
+                    quantity: new_qty,
+                    expiry: new_expiry,
+                },
+            );
+        } else {
+            allowances.set(key, ItemAllowance { quantity, expiry });
+        }
 
         env.storage().persistent().set(
             &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
@@ -787,10 +807,20 @@ impl ProjectContract {
             is_valid_amount(amount)?;
             is_valid_identifier(&env, &currency)?;
             is_future_expiry(&env, expiry)?;
-            allowances_map.set(
-                (allowee.clone(), currency.clone()),
-                CashAllowance { amount, expiry },
-            );
+            let key = (allowee.clone(), currency.clone());
+            if let Some(existing) = allowances_map.get(key.clone()) {
+                let new_amount = is_valid_sum(existing.amount, amount)?;
+                let new_expiry = merge_expiry(existing.expiry, expiry);
+                allowances_map.set(
+                    key,
+                    CashAllowance {
+                        amount: new_amount,
+                        expiry: new_expiry,
+                    },
+                );
+            } else {
+                allowances_map.set(key, CashAllowance { amount, expiry });
+            }
             pending_events.push_back((allowee.clone(), currency.clone(), amount));
         }
 
@@ -849,10 +879,20 @@ impl ProjectContract {
             is_valid_quantity(quantity)?;
             is_valid_identifier(&env, &item_id)?;
             is_future_expiry(&env, expiry)?;
-            allowances_map.set(
-                (allowee.clone(), item_id.clone()),
-                ItemAllowance { quantity, expiry },
-            );
+            let key = (allowee.clone(), item_id.clone());
+            if let Some(existing) = allowances_map.get(key.clone()) {
+                let new_qty = is_valid_sum(existing.quantity, quantity)?;
+                let new_expiry = merge_expiry(existing.expiry, expiry);
+                allowances_map.set(
+                    key,
+                    ItemAllowance {
+                        quantity: new_qty,
+                        expiry: new_expiry,
+                    },
+                );
+            } else {
+                allowances_map.set(key, ItemAllowance { quantity, expiry });
+            }
             pending_events.push_back((allowee.clone(), item_id.clone(), quantity));
         }
 
@@ -1422,6 +1462,19 @@ fn is_valid_vendor(env: &Env, project_id: &String, addr: &Address) -> Result<(),
 
 fn is_valid_sum(a: u64, b: u64) -> Result<u64, ContractError> {
     a.checked_add(b).ok_or(ContractError::InvalidInput)
+}
+
+// Merge expiry when adding to an existing allowance.
+// Policy:
+// - If existing is None, keep None (unbounded remains unbounded).
+// - If new is None, keep existing as-is (don't relax existing expiry).
+// - If both Some, take the later (max).
+fn merge_expiry(existing: Option<u64>, new: Option<u64>) -> Option<u64> {
+    match (existing, new) {
+        (None, _) => None,
+        (Some(e), None) => Some(e),
+        (Some(a), Some(b)) => Some(core::cmp::max(a, b)),
+    }
 }
 
 fn require_owner(env: &Env, caller: &Address) -> Result<(), ContractError> {
