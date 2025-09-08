@@ -186,6 +186,13 @@ pub struct RoleAssigned {
 }
 
 #[contracttype]
+pub struct RoleRemovedEvent {
+    pub project_id: String,
+    pub role: String,
+    pub member: Address,
+}
+
+#[contracttype]
 #[derive(Clone)]
 pub struct AllowanceAllocated {
     pub project_id: String,
@@ -200,6 +207,29 @@ pub struct AllowanceClaimed {
     pub project_id: String,
     pub allowee: Address,
     pub amount: u64,
+}
+
+#[contracttype]
+pub struct ContractPausedEvent {
+    pub by: Address,
+    pub until: u64,
+}
+
+#[contracttype]
+pub struct ContractUnpausedEvent {
+    pub by: Address,
+}
+
+#[contracttype]
+pub struct ContractAdminAddedEvent {
+    pub by: Address,
+    pub added: Address,
+}
+
+#[contracttype]
+pub struct ContractAdminRemovedEvent {
+    pub by: Address,
+    pub removed: Address,
 }
 
 #[contractimpl]
@@ -295,6 +325,14 @@ impl ProjectContract {
         non_reentrant(&env, ReentrancyLock::RemoveRole, &project_id)?;
         *vec = to_soroban_vec(&env, vec.iter().filter(|m| *m != member_to_remove));
         set_roles(&env, &project_id, &roles);
+        env.events().publish(
+            (RoleRemovedEvent {
+                project_id: project_id.clone(),
+                role: role.clone(),
+                member: member_to_remove,
+            },),
+            (),
+        );
         release_lock(&env, ReentrancyLock::RemoveRole, &project_id);
         Ok(())
     }
@@ -309,6 +347,8 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, PAUSE_UNTIL_KEY), &until);
+        env.events()
+            .publish((ContractPausedEvent { by: caller, until },), ());
         Ok(())
     }
 
@@ -320,6 +360,8 @@ impl ProjectContract {
         env.storage()
             .persistent()
             .remove(&Symbol::new(&env, PAUSE_UNTIL_KEY));
+        env.events()
+            .publish((ContractUnpausedEvent { by: caller },), ());
         Ok(())
     }
 
@@ -331,8 +373,15 @@ impl ProjectContract {
         require_owner_or_contract_admin(&env, &caller)?;
         let mut admins: Vec<Address> = get_contract_admins(&env);
         check_role_limits(&admins, &new_admin)?;
-        admins.push_back(new_admin);
+        admins.push_back(new_admin.clone());
         set_contract_admins(&env, &admins);
+        env.events().publish(
+            (ContractAdminAddedEvent {
+                by: caller,
+                added: new_admin,
+            },),
+            (),
+        );
         Ok(())
     }
 
@@ -345,6 +394,13 @@ impl ProjectContract {
         let mut admins: Vec<Address> = get_contract_admins(&env);
         admins = to_soroban_vec(&env, admins.iter().filter(|a| *a != admin));
         set_contract_admins(&env, &admins);
+        env.events().publish(
+            (ContractAdminRemovedEvent {
+                by: caller,
+                removed: admin,
+            },),
+            (),
+        );
         Ok(())
     }
 
@@ -584,6 +640,8 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocCashBatch, &project_id)?;
+        // buffer events until after storage commit for consistency
+        let mut pending_events: Vec<(Address, String, u64)> = Vec::new(&env);
         for (allowee, currency, amount, expiry) in allowances {
             is_valid_amount(amount)?;
             is_valid_identifier(&env, &currency)?;
@@ -592,22 +650,25 @@ impl ProjectContract {
                 (allowee.clone(), currency.clone()),
                 CashAllowance { amount, expiry },
             );
-
-            env.events().publish(
-                (AllowanceAllocated {
-                    project_id: project_id.clone(),
-                    allowee: allowee.clone(),
-                    currency_or_item: currency,
-                    amount,
-                },),
-                (),
-            );
+            pending_events.push_back((allowee.clone(), currency.clone(), amount));
         }
 
         env.storage().persistent().set(
             &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
             &allowances_map,
         );
+        // emit buffered events after commit
+        for (allowee, currency, amount) in pending_events.iter() {
+            env.events().publish(
+                (AllowanceAllocated {
+                    project_id: project_id.clone(),
+                    allowee: allowee.clone(),
+                    currency_or_item: currency.clone(),
+                    amount,
+                },),
+                (),
+            );
+        }
         release_lock(&env, ReentrancyLock::AllocCashBatch, &project_id);
         Ok(())
     }
@@ -630,6 +691,7 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocItemBatch, &project_id)?;
+        let mut pending_events: Vec<(Address, String, u64)> = Vec::new(&env);
         for (allowee, item_id, quantity, expiry) in allowances {
             is_valid_quantity(quantity)?;
             is_valid_identifier(&env, &item_id)?;
@@ -638,22 +700,24 @@ impl ProjectContract {
                 (allowee.clone(), item_id.clone()),
                 ItemAllowance { quantity, expiry },
             );
-
-            env.events().publish(
-                (AllowanceAllocated {
-                    project_id: project_id.clone(),
-                    allowee: allowee.clone(),
-                    currency_or_item: item_id,
-                    amount: quantity,
-                },),
-                (),
-            );
+            pending_events.push_back((allowee.clone(), item_id.clone(), quantity));
         }
 
         env.storage().persistent().set(
             &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
             &allowances_map,
         );
+        for (allowee, item_id, quantity) in pending_events.iter() {
+            env.events().publish(
+                (AllowanceAllocated {
+                    project_id: project_id.clone(),
+                    allowee: allowee.clone(),
+                    currency_or_item: item_id.clone(),
+                    amount: quantity,
+                },),
+                (),
+            );
+        }
         release_lock(&env, ReentrancyLock::AllocItemBatch, &project_id);
         Ok(())
     }
