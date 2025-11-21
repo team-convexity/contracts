@@ -968,7 +968,7 @@ impl ProjectContract {
                 amount: 0,
                 expiry: None,
             });
-        dest_allowance.amount += amount;
+        dest_allowance.amount = is_valid_sum(dest_allowance.amount, amount)?;
 
         allowances.set((caller.clone(), currency.clone()), src_allowance);
         allowances.set((new_allowee.clone(), currency.clone()), dest_allowance);
