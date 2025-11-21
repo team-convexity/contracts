@@ -292,16 +292,21 @@ impl ProjectContract {
 
         let mut roles = get_roles(&env, &project_id);
 
-        // Get mutable reference to the appropriate role vector and validate in one pass
-        let role_vec = if role == String::from_str(&env, "super_admin") {
+        let super_admin = String::from_str(&env, "super_admin");
+        let admin = String::from_str(&env, "admin");
+        let ngo = String::from_str(&env, "ngo");
+        let vendor = String::from_str(&env, "vendor");
+        let beneficiary = String::from_str(&env, "beneficiary");
+
+        let role_vec = if role == super_admin {
             &mut roles.super_admins
-        } else if role == String::from_str(&env, "admin") {
+        } else if role == admin {
             &mut roles.admins
-        } else if role == String::from_str(&env, "ngo") {
+        } else if role == ngo {
             &mut roles.ngos
-        } else if role == String::from_str(&env, "vendor") {
+        } else if role == vendor {
             &mut roles.vendors
-        } else if role == String::from_str(&env, "beneficiary") {
+        } else if role == beneficiary {
             &mut roles.beneficiaries
         } else {
             return Err(ContractError::InvalidRole);
@@ -347,28 +352,33 @@ impl ProjectContract {
         is_valid_identifier(&env, &project_id)?;
         let mut roles = get_roles(&env, &project_id);
 
-        let vec = if role == String::from_str(&env, "super_admin") {
+        let super_admin = String::from_str(&env, "super_admin");
+        let admin = String::from_str(&env, "admin");
+        let ngo = String::from_str(&env, "ngo");
+        let vendor = String::from_str(&env, "vendor");
+        let beneficiary = String::from_str(&env, "beneficiary");
+
+        let role_vec = if role == super_admin {
             &mut roles.super_admins
-        } else if role == String::from_str(&env, "admin") {
+        } else if role == admin {
             &mut roles.admins
-        } else if role == String::from_str(&env, "ngo") {
+        } else if role == ngo {
             &mut roles.ngos
-        } else if role == String::from_str(&env, "vendor") {
+        } else if role == vendor {
             &mut roles.vendors
-        } else if role == String::from_str(&env, "beneficiary") {
+        } else if role == beneficiary {
             &mut roles.beneficiaries
         } else {
             return Err(ContractError::InvalidRole);
         };
 
-        // take lock for mutation window
         non_reentrant(&env, ReentrancyLock::RemoveRole, &project_id)?;
-        *vec = to_soroban_vec(&env, vec.iter().filter(|m| *m != member_to_remove));
+        *role_vec = to_soroban_vec(&env, role_vec.iter().filter(|m| *m != member_to_remove));
         set_roles(&env, &project_id, &roles);
         env.events().publish(
             (RoleRemovedEvent {
                 project_id: project_id.clone(),
-                role: role.clone(),
+                role,
                 member: member_to_remove,
             },),
             (),
