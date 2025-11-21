@@ -805,10 +805,11 @@ impl ProjectContract {
         is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
         let mut allowances_map: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocCashBatch, &project_id)?;
@@ -819,33 +820,28 @@ impl ProjectContract {
             is_valid_identifier(&env, &currency)?;
             is_future_expiry(&env, expiry)?;
             let key = (allowee.clone(), currency.clone());
-            if let Some(existing) = allowances_map.get(key.clone()) {
+            let new_allowance = if let Some(existing) = allowances_map.get(key.clone()) {
                 let new_amount = is_valid_sum(existing.amount, amount)?;
                 let new_expiry = merge_expiry(existing.expiry, expiry);
-                allowances_map.set(
-                    key,
-                    CashAllowance {
-                        amount: new_amount,
-                        expiry: new_expiry,
-                    },
-                );
+                CashAllowance {
+                    amount: new_amount,
+                    expiry: new_expiry,
+                }
             } else {
-                allowances_map.set(key, CashAllowance { amount, expiry });
-            }
-            pending_events.push_back((allowee.clone(), currency.clone(), amount));
+                CashAllowance { amount, expiry }
+            };
+            allowances_map.set(key, new_allowance);
+            pending_events.push_back((allowee, currency, amount));
         }
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
-            &allowances_map,
-        );
+        env.storage().persistent().set(&storage_key, &allowances_map);
         // emit buffered events after commit
         for (allowee, currency, amount) in pending_events.iter() {
             env.events().publish(
                 (AllowanceAllocated {
                     project_id: project_id.clone(),
-                    allowee: allowee.clone(),
-                    currency_or_item: currency.clone(),
+                    allowee,
+                    currency_or_item: currency,
                     amount,
                 },),
                 (),
