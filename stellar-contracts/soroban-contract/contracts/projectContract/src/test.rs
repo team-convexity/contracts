@@ -1376,4 +1376,86 @@ mod test {
             &vec![&env, project_id1, project_id2],
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1006)")]
+    fn test_transfer_expired_cash_allowance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // set initial time
+        env.ledger().with_mut(|l| {
+            l.timestamp = 1000;
+        });
+        let base = env.ledger().timestamp();
+        let expiry = base + 500;
+
+        // allocate with expiry
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &100,
+            &String::from_str(&env, CURRENCY),
+            &Some(expiry),
+        );
+
+        // advance time past expiry
+        env.ledger().with_mut(|l| {
+            l.timestamp = expiry + 1;
+        });
+
+        // try to transfer expired allowance - should fail with ExpiredAllowance (1006)
+        let new_allowee = Address::generate(&env);
+        client.transfer_cash_allowance(
+            &beneficiary,
+            &project_id,
+            &new_allowee,
+            &String::from_str(&env, CURRENCY),
+            &50,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1006)")]
+    fn test_transfer_expired_item_allowance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // set initial time
+        env.ledger().with_mut(|l| {
+            l.timestamp = 1000;
+        });
+        let base = env.ledger().timestamp();
+        let expiry = base + 500;
+
+        // allocate with expiry
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &10,
+            &Some(expiry),
+        );
+
+        // advance time past expiry
+        env.ledger().with_mut(|l| {
+            l.timestamp = expiry + 1;
+        });
+
+        // try to transfer expired allowance - should fail with ExpiredAllowance (1006)
+        let new_allowee = Address::generate(&env);
+        client.transfer_item_allowance(
+            &beneficiary,
+            &project_id,
+            &new_allowee,
+            &String::from_str(&env, ITEM_ID),
+            &5,
+        );
+    }
 }

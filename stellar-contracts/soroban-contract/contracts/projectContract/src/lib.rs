@@ -931,6 +931,7 @@ impl ProjectContract {
     /// - `ContractError::InvalidInput`
     /// - `ContractError::Unauthorized`
     /// - `ContractError::ReentrancyDetected`
+    /// - `ContractError::ExpiredAllowance`
     pub fn transfer_cash_allowance(
         env: Env,
         caller: Address,
@@ -956,6 +957,7 @@ impl ProjectContract {
             .get((caller.clone(), currency.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        check_expiry(&env, src_allowance.expiry)?;
         non_reentrant(&env, ReentrancyLock::TransferCash, &project_id)?;
         if src_allowance.amount < amount {
             return Err(ContractError::InsufficientFunds);
@@ -1005,6 +1007,7 @@ impl ProjectContract {
     /// - `ContractError::InvalidInput`
     /// - `ContractError::Unauthorized`
     /// - `ContractError::ReentrancyDetected`
+    /// - `ContractError::ExpiredAllowance`
     pub fn transfer_item_allowance(
         env: Env,
         caller: Address,
@@ -1030,6 +1033,7 @@ impl ProjectContract {
             .get((caller.clone(), item_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        check_expiry(&env, src_allowance.expiry)?;
         non_reentrant(&env, ReentrancyLock::TransferItem, &project_id)?;
         if src_allowance.quantity < quantity {
             return Err(ContractError::InsufficientFunds);
