@@ -874,10 +874,11 @@ impl ProjectContract {
         is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
         let mut allowances_map: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocItemBatch, &project_id)?;
@@ -887,32 +888,27 @@ impl ProjectContract {
             is_valid_identifier(&env, &item_id)?;
             is_future_expiry(&env, expiry)?;
             let key = (allowee.clone(), item_id.clone());
-            if let Some(existing) = allowances_map.get(key.clone()) {
+            let new_allowance = if let Some(existing) = allowances_map.get(key.clone()) {
                 let new_qty = is_valid_sum(existing.quantity, quantity)?;
                 let new_expiry = merge_expiry(existing.expiry, expiry);
-                allowances_map.set(
-                    key,
-                    ItemAllowance {
-                        quantity: new_qty,
-                        expiry: new_expiry,
-                    },
-                );
+                ItemAllowance {
+                    quantity: new_qty,
+                    expiry: new_expiry,
+                }
             } else {
-                allowances_map.set(key, ItemAllowance { quantity, expiry });
-            }
-            pending_events.push_back((allowee.clone(), item_id.clone(), quantity));
+                ItemAllowance { quantity, expiry }
+            };
+            allowances_map.set(key, new_allowance);
+            pending_events.push_back((allowee, item_id, quantity));
         }
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
-            &allowances_map,
-        );
+        env.storage().persistent().set(&storage_key, &allowances_map);
         for (allowee, item_id, quantity) in pending_events.iter() {
             env.events().publish(
                 (AllowanceAllocated {
                     project_id: project_id.clone(),
-                    allowee: allowee.clone(),
-                    currency_or_item: item_id.clone(),
+                    allowee,
+                    currency_or_item: item_id,
                     amount: quantity,
                 },),
                 (),
