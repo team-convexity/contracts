@@ -1299,29 +1299,32 @@ impl ProjectContract {
     /// # Arguments
     /// - `beneficiary`: address.
     /// - `project_ids`: list of project identifiers.
+    /// 
+    /// # Errors
+    /// - `ContractError::InvalidInput` if overflow occurs or validation fails
     pub fn get_total_cash_allowance(
         env: Env,
         beneficiary: Address,
         project_ids: Vec<String>,
-    ) -> u64 {
+    ) -> Result<u64, ContractError> {
         let mut total_amount: u64 = 0;
         // Bound the number of project IDs
-        let _ = is_valid_batch_len(project_ids.len());
+        is_valid_batch_len(project_ids.len())?;
 
         for project_id in project_ids.iter() {
             // Validate each project identifier
-            let _ = is_valid_identifier(&env, &project_id);
+            is_valid_identifier(&env, &project_id)?;
             let allowances: Map<(Address, String), CashAllowance> =
                 Self::get_all_cash_allowances(env.clone(), project_id.clone());
 
             for ((allowee, _currency), allowance) in allowances.iter() {
                 if allowee == beneficiary {
-                    total_amount += allowance.amount;
+                    total_amount = is_valid_sum(total_amount, allowance.amount)?;
                 }
             }
         }
 
-        total_amount
+        Ok(total_amount)
     }
 
     /// Sums total item allowance across projects for a beneficiary.

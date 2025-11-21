@@ -1274,4 +1274,55 @@ mod test {
             &100,
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_get_total_cash_overflow_exploit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        
+        // create two projects
+        let project_id1 = String::from_str(&env, "project1");
+        let project_id2 = String::from_str(&env, "project2");
+        
+        // setup roles for project2
+        let roles_key = (Symbol::new(&env, "roles"), project_id2.clone());
+        env.as_contract(&client.address, || {
+            let roles = Roles {
+                super_admins: vec![&env],
+                admins: vec![&env],
+                ngos: vec![&env, ngo.clone()],
+                vendors: vec![&env],
+                beneficiaries: vec![&env, beneficiary.clone()],
+            };
+            env.storage().persistent().set(&roles_key, &roles);
+        });
+        
+        // allocate near-max in project1
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id1,
+            &beneficiary,
+            &(u64::MAX - 100),
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+        
+        // allocate in project2 - this should overflow when summing
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id2,
+            &beneficiary,
+            &200,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+        
+        // this should panic with InvalidInput (1012) after fix
+        let _total = client.get_total_cash_allowance(
+            &beneficiary,
+            &vec![&env, project_id1, project_id2],
+        );
+    }
 }
