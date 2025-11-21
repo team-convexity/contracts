@@ -55,6 +55,7 @@ pub enum ContractError {
     ReentrancyDetected,
     InvalidInput,
     RoleLimitExceeded,
+    AlreadyInitialized,
 }
 
 #[derive(Clone)]
@@ -137,6 +138,7 @@ impl TryFrom<ContractError> for soroban_sdk::Error {
             ContractError::ReentrancyDetected => Ok(soroban_sdk::Error::from_contract_error(1011)),
             ContractError::InvalidInput => Ok(soroban_sdk::Error::from_contract_error(1012)),
             ContractError::RoleLimitExceeded => Ok(soroban_sdk::Error::from_contract_error(1013)),
+            ContractError::AlreadyInitialized => Ok(soroban_sdk::Error::from_contract_error(1014)),
         }
     }
 }
@@ -156,6 +158,7 @@ impl From<&ContractError> for soroban_sdk::Error {
             ContractError::ReentrancyDetected => soroban_sdk::Error::from_contract_error(1011),
             ContractError::InvalidInput => soroban_sdk::Error::from_contract_error(1012),
             ContractError::RoleLimitExceeded => soroban_sdk::Error::from_contract_error(1013),
+            ContractError::AlreadyInitialized => soroban_sdk::Error::from_contract_error(1014),
         }
     }
 }
@@ -241,14 +244,24 @@ impl ProjectContract {
     ///
     /// # Errors
     /// - `ContractError::Unauthorized`
-    pub fn initialize(env: Env, owner: Address) {
+    /// - `ContractError::AlreadyInitialized`
+    pub fn initialize(env: Env, owner: Address) -> Result<(), ContractError> {
         owner.require_auth();
+        
+        // Check if already initialized
+        let owner_key = Symbol::new(&env, OWNER_KEY);
+        if env.storage().persistent().has(&owner_key) {
+            return Err(ContractError::AlreadyInitialized);
+        }
+        
         env.storage()
             .persistent()
-            .set(&Symbol::new(&env, OWNER_KEY), &owner);
+            .set(&owner_key, &owner);
         env.storage()
             .persistent()
             .set(&Symbol::new(&env, VERSION_KEY), &1u32);
+        
+        Ok(())
     }
 
     // -- role management --

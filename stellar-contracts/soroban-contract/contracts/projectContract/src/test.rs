@@ -1454,4 +1454,30 @@ mod test {
             &5,
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1014)")]
+    fn test_reinitialization_exploit() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(ProjectContract, ());
+        let client = ProjectContractClient::new(&env, &contract_id);
+
+        // legitimate owner initializes the contract
+        let legitimate_owner = Address::generate(&env);
+        client.initialize(&legitimate_owner);
+
+        // verify legitimate owner is set
+        let owner_key = Symbol::new(&env, "owner");
+        let stored_owner: Address = env.as_contract(&contract_id, || {
+            env.storage().persistent().get(&owner_key).unwrap()
+        });
+        assert_eq!(stored_owner, legitimate_owner);
+
+        // EXPLOIT ATTEMPT: attacker tries to call initialize again with their address
+        // This should now fail with AlreadyInitialized error (1014)
+        let attacker = Address::generate(&env);
+        client.initialize(&attacker);
+    }
 }
