@@ -290,30 +290,29 @@ impl ProjectContract {
         require_owner(&env, &caller)?;
         is_valid_identifier(&env, &project_id)?;
 
-        let member_clone = new_member.clone();
         let mut roles = get_roles(&env, &project_id);
 
         // Perform all validations first, then take the lock only for the mutation window.
         if role == String::from_str(&env, "super_admin") {
             check_role_limits(&roles.super_admins, &new_member)?;
             non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.super_admins.push_back(member_clone.clone());
+            roles.super_admins.push_back(new_member.clone());
         } else if role == String::from_str(&env, "admin") {
             check_role_limits(&roles.admins, &new_member)?;
             non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.admins.push_back(member_clone.clone());
+            roles.admins.push_back(new_member.clone());
         } else if role == String::from_str(&env, "ngo") {
             check_role_limits(&roles.ngos, &new_member)?;
             non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.ngos.push_back(member_clone.clone());
+            roles.ngos.push_back(new_member.clone());
         } else if role == String::from_str(&env, "vendor") {
             check_role_limits(&roles.vendors, &new_member)?;
             non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.vendors.push_back(member_clone.clone());
+            roles.vendors.push_back(new_member.clone());
         } else if role == String::from_str(&env, "beneficiary") {
             check_role_limits(&roles.beneficiaries, &new_member)?;
             non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.beneficiaries.push_back(member_clone.clone());
+            roles.beneficiaries.push_back(new_member.clone());
         } else {
             return Err(ContractError::InvalidRole);
         }
@@ -524,19 +523,19 @@ impl ProjectContract {
 
         // lock and mutate (accumulate if an entry already exists)
         non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
-        let key = (allowee.clone(), currency.clone());
+        let key = (allowee, currency);
         if let Some(existing) = allowances.get(key.clone()) {
             let new_amount = is_valid_sum(existing.amount, amount)?;
             let new_expiry = merge_expiry(existing.expiry, expiry);
             allowances.set(
-                key,
+                key.clone(),
                 CashAllowance {
                     amount: new_amount,
                     expiry: new_expiry,
                 },
             );
         } else {
-            allowances.set(key, CashAllowance { amount, expiry });
+            allowances.set(key.clone(), CashAllowance { amount, expiry });
         }
         env.storage().persistent().set(
             &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
@@ -546,8 +545,8 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceAllocated {
                 project_id: project_id.clone(),
-                allowee,
-                currency_or_item: currency,
+                allowee: key.0,
+                currency_or_item: key.1,
                 amount,
             },),
             (),
@@ -591,8 +590,9 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        let ben_key = (caller.clone(), currency.clone());
         let mut ben_allowance: CashAllowance = allowances
-            .get((caller.clone(), currency.clone()))
+            .get(ben_key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, ben_allowance.expiry)?;
@@ -603,20 +603,21 @@ impl ProjectContract {
         }
         ben_allowance.amount -= amount;
 
-        allowances.set((caller.clone(), currency.clone()), ben_allowance);
+        allowances.set(ben_key.clone(), ben_allowance);
 
         if let Some(vendor) = vendor {
             is_valid_transfer_parties(&caller, &vendor)?;
             // ensure vendor exists in roles (defense-in-depth, require_role occurs on redeem)
             is_valid_vendor(&env, &project_id, &vendor)?;
+            let vendor_key = (vendor, currency);
             let mut vendor_allowance: CashAllowance = allowances
-                .get((vendor.clone(), currency.clone()))
+                .get(vendor_key.clone())
                 .unwrap_or(CashAllowance {
                     amount: 0,
                     expiry: None,
                 });
             vendor_allowance.amount = is_valid_sum(vendor_allowance.amount, amount)?;
-            allowances.set((vendor.clone(), currency.clone()), vendor_allowance);
+            allowances.set(vendor_key, vendor_allowance);
         }
 
         env.storage().persistent().set(
@@ -627,7 +628,7 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: caller,
+                allowee: ben_key.0,
                 amount,
             },),
             (),
@@ -674,19 +675,19 @@ impl ProjectContract {
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
-        let key = (allowee.clone(), item_id.clone());
+        let key = (allowee, item_id);
         if let Some(existing) = allowances.get(key.clone()) {
             let new_qty = is_valid_sum(existing.quantity, quantity)?;
             let new_expiry = merge_expiry(existing.expiry, expiry);
             allowances.set(
-                key,
+                key.clone(),
                 ItemAllowance {
                     quantity: new_qty,
                     expiry: new_expiry,
                 },
             );
         } else {
-            allowances.set(key, ItemAllowance { quantity, expiry });
+            allowances.set(key.clone(), ItemAllowance { quantity, expiry });
         }
 
         env.storage().persistent().set(
@@ -697,8 +698,8 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceAllocated {
                 project_id: project_id.clone(),
-                allowee,
-                currency_or_item: item_id,
+                allowee: key.0,
+                currency_or_item: key.1,
                 amount: quantity,
             },),
             (),
@@ -744,8 +745,9 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        let ben_key = (caller.clone(), item_id.clone());
         let mut ben_allowance: ItemAllowance = allowances
-            .get((caller.clone(), item_id.clone()))
+            .get(ben_key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, ben_allowance.expiry)?;
@@ -755,16 +757,17 @@ impl ProjectContract {
         }
         ben_allowance.quantity -= quantity;
 
-        allowances.set((caller.clone(), item_id.clone()), ben_allowance);
+        allowances.set(ben_key.clone(), ben_allowance);
 
+        let vendor_key = (vendor, item_id);
         let mut vendor_allowance: ItemAllowance = allowances
-            .get((vendor.clone(), item_id.clone()))
+            .get(vendor_key.clone())
             .unwrap_or(ItemAllowance {
                 quantity: 0,
                 expiry: None,
             });
         vendor_allowance.quantity = is_valid_sum(vendor_allowance.quantity, quantity)?;
-        allowances.set((vendor.clone(), item_id.clone()), vendor_allowance);
+        allowances.set(vendor_key, vendor_allowance);
 
         env.storage().persistent().set(
             &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
@@ -774,7 +777,7 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: caller,
+                allowee: ben_key.0,
                 amount: quantity,
             },),
             (),
@@ -966,8 +969,9 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        let src_key = (caller.clone(), currency.clone());
         let mut src_allowance: CashAllowance = allowances
-            .get((caller.clone(), currency.clone()))
+            .get(src_key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, src_allowance.expiry)?;
@@ -977,16 +981,17 @@ impl ProjectContract {
         }
         src_allowance.amount -= amount;
 
+        let dest_key = (new_allowee, currency);
         let mut dest_allowance: CashAllowance = allowances
-            .get((new_allowee.clone(), currency.clone()))
+            .get(dest_key.clone())
             .unwrap_or(CashAllowance {
                 amount: 0,
                 expiry: None,
             });
         dest_allowance.amount = is_valid_sum(dest_allowance.amount, amount)?;
 
-        allowances.set((caller.clone(), currency.clone()), src_allowance);
-        allowances.set((new_allowee.clone(), currency.clone()), dest_allowance);
+        allowances.set(src_key.clone(), src_allowance);
+        allowances.set(dest_key, dest_allowance);
 
         env.storage().persistent().set(
             &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
@@ -996,7 +1001,7 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: caller,
+                allowee: src_key.0,
                 amount,
             },),
             (),
@@ -1042,8 +1047,9 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        let src_key = (caller.clone(), item_id.clone());
         let mut src_allowance: ItemAllowance = allowances
-            .get((caller.clone(), item_id.clone()))
+            .get(src_key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
         check_expiry(&env, src_allowance.expiry)?;
@@ -1053,16 +1059,17 @@ impl ProjectContract {
         }
         src_allowance.quantity -= quantity;
 
+        let dest_key = (new_allowee, item_id);
         let mut dest_allowance: ItemAllowance = allowances
-            .get((new_allowee.clone(), item_id.clone()))
+            .get(dest_key.clone())
             .unwrap_or(ItemAllowance {
                 quantity: 0,
                 expiry: None,
             });
         dest_allowance.quantity = is_valid_sum(dest_allowance.quantity, quantity)?;
 
-        allowances.set((caller.clone(), item_id.clone()), src_allowance);
-        allowances.set((new_allowee.clone(), item_id.clone()), dest_allowance);
+        allowances.set(src_key.clone(), src_allowance);
+        allowances.set(dest_key, dest_allowance);
 
         env.storage().persistent().set(
             &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
@@ -1072,7 +1079,7 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: caller,
+                allowee: src_key.0,
                 amount: quantity,
             },),
             (),
@@ -1117,8 +1124,9 @@ impl ProjectContract {
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
             .ok_or(ContractError::AllowanceNotFound)?;
 
+        let item_key = (vendor.clone(), item_id);
         let mut vendor_allowance: ItemAllowance = allowances
-            .get((vendor.clone(), item_id.clone()))
+            .get(item_key.clone())
             .ok_or(ContractError::AllowanceNotFound)?;
 
         non_reentrant(&env, ReentrancyLock::RedeemItem, &project_id)?;
@@ -1127,9 +1135,8 @@ impl ProjectContract {
         }
 
         vendor_allowance.quantity -= quantity;
-        let item_key = (vendor.clone(), item_id.clone());
         if vendor_allowance.quantity == 0 {
-            allowances.remove(item_key);
+            allowances.remove(item_key.clone());
         } else {
             allowances.set(item_key.clone(), vendor_allowance);
         }
@@ -1142,7 +1149,7 @@ impl ProjectContract {
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: vendor,
+                allowee: item_key.0,
                 amount: quantity,
             },),
             (),
