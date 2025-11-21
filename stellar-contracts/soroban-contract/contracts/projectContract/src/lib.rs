@@ -950,10 +950,11 @@ impl ProjectContract {
         is_valid_amount(amount)?;
         is_valid_transfer_parties(&caller, &new_allowee)?;
 
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .ok_or(ContractError::AllowanceNotFound)?;
 
         let src_key = (caller.clone(), currency.clone());
@@ -980,15 +981,13 @@ impl ProjectContract {
         allowances.set(src_key.clone(), src_allowance);
         allowances.set(dest_key, dest_allowance);
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
+        env.storage().persistent().set(&storage_key, &allowances);
 
+        let event_allowee = src_key.0;
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: src_key.0,
+                allowee: event_allowee,
                 amount,
             },),
             (),
@@ -1028,10 +1027,11 @@ impl ProjectContract {
         is_valid_quantity(quantity)?;
         is_valid_transfer_parties(&caller, &new_allowee)?;
 
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .ok_or(ContractError::AllowanceNotFound)?;
 
         let src_key = (caller.clone(), item_id.clone());
@@ -1058,15 +1058,13 @@ impl ProjectContract {
         allowances.set(src_key.clone(), src_allowance);
         allowances.set(dest_key, dest_allowance);
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
+        env.storage().persistent().set(&storage_key, &allowances);
 
+        let event_allowee = src_key.0;
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: src_key.0,
+                allowee: event_allowee,
                 amount: quantity,
             },),
             (),
