@@ -1480,4 +1480,48 @@ mod test {
         let attacker = Address::generate(&env);
         client.initialize(&attacker);
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_redeem_zero_cash_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, _, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // allocate some cash to vendor
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &vendor,
+            &100,
+            &String::from_str(&env, CURRENCY),
+            &None,
+        );
+
+        // try to redeem zero amount - should fail with InvalidInput (1012)
+        client.redeem_cash_claims(&vendor, &Some(project_id), &String::from_str(&env, CURRENCY), &0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_redeem_zero_item_quantity() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, _, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // allocate some items to vendor
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &vendor,
+            &String::from_str(&env, ITEM_ID),
+            &10,
+            &None,
+        );
+
+        // try to redeem zero quantity - should fail with InvalidInput (1012)
+        client.redeem_item_claims(&vendor, &Some(project_id), &String::from_str(&env, ITEM_ID), &0);
+    }
 }
