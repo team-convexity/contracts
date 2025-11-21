@@ -584,10 +584,11 @@ impl ProjectContract {
         is_valid_identifier(&env, &currency)?;
         is_valid_amount(amount)?;
 
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .ok_or(ContractError::AllowanceNotFound)?;
 
         let ben_key = (caller.clone(), currency.clone());
@@ -620,15 +621,13 @@ impl ProjectContract {
             allowances.set(vendor_key, vendor_allowance);
         }
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
+        env.storage().persistent().set(&storage_key, &allowances);
 
+        let event_allowee = ben_key.0;
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: ben_key.0,
+                allowee: event_allowee,
                 amount,
             },),
             (),
