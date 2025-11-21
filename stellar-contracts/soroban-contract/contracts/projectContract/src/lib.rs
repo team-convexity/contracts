@@ -668,38 +668,35 @@ impl ProjectContract {
         is_valid_identifier(&env, &item_id)?;
         is_future_expiry(&env, expiry)?;
 
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
         non_reentrant(&env, ReentrancyLock::AllocItem, &project_id)?;
         let key = (allowee, item_id);
-        if let Some(existing) = allowances.get(key.clone()) {
+        let new_allowance = if let Some(existing) = allowances.get(key.clone()) {
             let new_qty = is_valid_sum(existing.quantity, quantity)?;
             let new_expiry = merge_expiry(existing.expiry, expiry);
-            allowances.set(
-                key.clone(),
-                ItemAllowance {
-                    quantity: new_qty,
-                    expiry: new_expiry,
-                },
-            );
+            ItemAllowance {
+                quantity: new_qty,
+                expiry: new_expiry,
+            }
         } else {
-            allowances.set(key.clone(), ItemAllowance { quantity, expiry });
-        }
-
-        env.storage().persistent().set(
-            &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
-
+            ItemAllowance { quantity, expiry }
+        };
+        
+        allowances.set(key.clone(), new_allowance);
+        env.storage().persistent().set(&storage_key, &allowances);
+        
+        let (event_allowee, event_item) = (key.0, key.1);
         env.events().publish(
             (AllowanceAllocated {
                 project_id: project_id.clone(),
-                allowee: key.0,
-                currency_or_item: key.1,
+                allowee: event_allowee,
+                currency_or_item: event_item,
                 amount: quantity,
             },),
             (),
