@@ -1234,4 +1234,44 @@ mod test {
             &100,
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_transfer_item_overflow_exploit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // setup: give beneficiary some items
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &100,
+            &None,
+        );
+
+        // give new_allowee close to max quantity
+        let new_allowee = Address::generate(&env);
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &new_allowee,
+            &String::from_str(&env, ITEM_ID),
+            &(u64::MAX - 50),
+            &None,
+        );
+
+        // try to transfer which would overflow the destination
+        // this should panic with InvalidInput (1012) after fix
+        client.transfer_item_allowance(
+            &beneficiary,
+            &project_id,
+            &new_allowee,
+            &String::from_str(&env, ITEM_ID),
+            &100,
+        );
+    }
 }
