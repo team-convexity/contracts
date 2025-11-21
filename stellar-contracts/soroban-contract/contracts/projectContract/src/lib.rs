@@ -292,30 +292,24 @@ impl ProjectContract {
 
         let mut roles = get_roles(&env, &project_id);
 
-        // Perform all validations first, then take the lock only for the mutation window.
-        if role == String::from_str(&env, "super_admin") {
-            check_role_limits(&roles.super_admins, &new_member)?;
-            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.super_admins.push_back(new_member.clone());
+        // Get mutable reference to the appropriate role vector and validate in one pass
+        let role_vec = if role == String::from_str(&env, "super_admin") {
+            &mut roles.super_admins
         } else if role == String::from_str(&env, "admin") {
-            check_role_limits(&roles.admins, &new_member)?;
-            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.admins.push_back(new_member.clone());
+            &mut roles.admins
         } else if role == String::from_str(&env, "ngo") {
-            check_role_limits(&roles.ngos, &new_member)?;
-            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.ngos.push_back(new_member.clone());
+            &mut roles.ngos
         } else if role == String::from_str(&env, "vendor") {
-            check_role_limits(&roles.vendors, &new_member)?;
-            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.vendors.push_back(new_member.clone());
+            &mut roles.vendors
         } else if role == String::from_str(&env, "beneficiary") {
-            check_role_limits(&roles.beneficiaries, &new_member)?;
-            non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
-            roles.beneficiaries.push_back(new_member.clone());
+            &mut roles.beneficiaries
         } else {
             return Err(ContractError::InvalidRole);
-        }
+        };
+
+        check_role_limits(role_vec, &new_member)?;
+        non_reentrant(&env, ReentrancyLock::AddRole, &project_id)?;
+        role_vec.push_back(new_member.clone());
 
         set_roles(&env, &project_id, &roles);
         env.events().publish(
