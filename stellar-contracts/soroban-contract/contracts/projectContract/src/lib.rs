@@ -1332,27 +1332,30 @@ impl ProjectContract {
     /// # Arguments
     /// - `beneficiary`: address.
     /// - `project_ids`: list of project identifiers.
+    /// 
+    /// # Errors
+    /// - `ContractError::InvalidInput` if overflow occurs or validation fails
     pub fn get_total_item_allowance(
         env: Env,
         beneficiary: Address,
         project_ids: Vec<String>,
-    ) -> u64 {
+    ) -> Result<u64, ContractError> {
         let mut total_quantity: u64 = 0;
-        let _ = is_valid_batch_len(project_ids.len());
+        is_valid_batch_len(project_ids.len())?;
 
         for project_id in project_ids.iter() {
-            let _ = is_valid_identifier(&env, &project_id);
+            is_valid_identifier(&env, &project_id)?;
             let allowances: Map<(Address, String), ItemAllowance> =
                 Self::get_all_item_allowances(env.clone(), project_id.clone());
 
             for ((allowee, _item_id), allowance) in allowances.iter() {
                 if allowee == beneficiary {
-                    total_quantity += allowance.quantity;
+                    total_quantity = is_valid_sum(total_quantity, allowance.quantity)?;
                 }
             }
         }
 
-        total_quantity
+        Ok(total_quantity)
     }
 
     /// Gets roles for a project.

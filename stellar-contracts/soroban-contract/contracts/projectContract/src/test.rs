@@ -1325,4 +1325,55 @@ mod test {
             &vec![&env, project_id1, project_id2],
         );
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_get_total_item_overflow_exploit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
+        
+        // create two projects
+        let project_id1 = String::from_str(&env, "project1");
+        let project_id2 = String::from_str(&env, "project2");
+        
+        // setup roles for project2
+        let roles_key = (Symbol::new(&env, "roles"), project_id2.clone());
+        env.as_contract(&client.address, || {
+            let roles = Roles {
+                super_admins: vec![&env],
+                admins: vec![&env],
+                ngos: vec![&env, ngo.clone()],
+                vendors: vec![&env],
+                beneficiaries: vec![&env, beneficiary.clone()],
+            };
+            env.storage().persistent().set(&roles_key, &roles);
+        });
+        
+        // allocate near-max in project1
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id1,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &(u64::MAX - 100),
+            &None,
+        );
+        
+        // allocate in project2 - this should overflow when summing
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id2,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+            &200,
+            &None,
+        );
+        
+        // this should panic with InvalidInput (1012) after fix
+        let _total = client.get_total_item_allowance(
+            &beneficiary,
+            &vec![&env, project_id1, project_id2],
+        );
+    }
 }
