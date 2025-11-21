@@ -519,38 +519,34 @@ impl ProjectContract {
         is_valid_identifier(&env, &currency)?;
         is_future_expiry(&env, expiry)?;
 
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
-        // lock and mutate (accumulate if an entry already exists)
         non_reentrant(&env, ReentrancyLock::AllocCash, &project_id)?;
         let key = (allowee, currency);
-        if let Some(existing) = allowances.get(key.clone()) {
-            let new_amount = is_valid_sum(existing.amount, amount)?;
-            let new_expiry = merge_expiry(existing.expiry, expiry);
-            allowances.set(
-                key.clone(),
-                CashAllowance {
-                    amount: new_amount,
-                    expiry: new_expiry,
-                },
-            );
+        
+        let new_allowance = if let Some(existing) = allowances.get(key.clone()) {
+            CashAllowance {
+                amount: is_valid_sum(existing.amount, amount)?,
+                expiry: merge_expiry(existing.expiry, expiry),
+            }
         } else {
-            allowances.set(key.clone(), CashAllowance { amount, expiry });
-        }
-        env.storage().persistent().set(
-            &(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
+            CashAllowance { amount, expiry }
+        };
+        
+        allowances.set(key.clone(), new_allowance);
+        env.storage().persistent().set(&storage_key, &allowances);
 
+        let (event_allowee, event_currency) = (key.0, key.1);
         env.events().publish(
             (AllowanceAllocated {
                 project_id: project_id.clone(),
-                allowee: key.0,
-                currency_or_item: key.1,
+                allowee: event_allowee,
+                currency_or_item: event_currency,
                 amount,
             },),
             (),
