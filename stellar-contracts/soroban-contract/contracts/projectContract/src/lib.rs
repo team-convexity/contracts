@@ -735,10 +735,11 @@ impl ProjectContract {
         is_valid_transfer_parties(&caller, &vendor)?;
         is_valid_vendor(&env, &project_id, &vendor)?;
 
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
-            .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+            .get(&storage_key)
             .ok_or(ContractError::AllowanceNotFound)?;
 
         let ben_key = (caller.clone(), item_id.clone());
@@ -765,15 +766,13 @@ impl ProjectContract {
         vendor_allowance.quantity = is_valid_sum(vendor_allowance.quantity, quantity)?;
         allowances.set(vendor_key, vendor_allowance);
 
-        env.storage().persistent().set(
-            &(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()),
-            &allowances,
-        );
+        env.storage().persistent().set(&storage_key, &allowances);
 
+        let event_allowee = ben_key.0;
         env.events().publish(
             (AllowanceClaimed {
                 project_id: project_id.clone(),
-                allowee: ben_key.0,
+                allowee: event_allowee,
                 amount: quantity,
             },),
             (),
