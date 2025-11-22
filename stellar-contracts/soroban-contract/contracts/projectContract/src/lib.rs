@@ -9,8 +9,8 @@
 
 #![no_std]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, Env, IntoVal, Map, String, Symbol, TryFromVal,
-    Val, Vec,
+    contract, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Map, String, Symbol,
+    TryFromVal, Val, Vec,
 };
 
 #[contract]
@@ -426,6 +426,24 @@ impl ProjectContract {
             .remove(&Symbol::new(&env, PAUSE_UNTIL_KEY));
         env.events()
             .publish((ContractUnpausedEvent { by: caller },), ());
+        Ok(())
+    }
+
+    /// Upgrades the contract to a new WASM hash.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    /// - `new_wasm_hash`: The hash of the new WASM code.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
+    pub fn upgrade(
+        env: Env,
+        caller: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), ContractError> {
+        require_owner_or_contract_admin(&env, &caller)?;
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
         Ok(())
     }
 
@@ -1373,6 +1391,153 @@ impl ProjectContract {
         // Validate project identifier
         let _ = is_valid_identifier(&env, &project_id);
         get_roles(&env, &project_id)
+    }
+
+    pub fn get_version(env: Env) -> String {
+        String::from_str(&env, "1.0.0")
+    }
+
+    pub fn get_owner(env: Env) -> Address {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, OWNER_KEY))
+            .expect("Owner not set")
+    }
+
+    pub fn get_contract_admins(env: Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, CONTRACT_ADMINS_KEY))
+            .unwrap_or(Vec::new(&env))
+    }
+    
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, PAUSED_KEY))
+            .unwrap_or(false)
+    }
+
+    /// returns pause expiry timestamp if paused, None otherwise.
+    pub fn get_pause_until(env: Env) -> Option<u64> {
+        env.storage()
+            .persistent()
+            .get(&Symbol::new(&env, PAUSE_UNTIL_KEY))
+    }
+
+    /// Checks if an address has a specific role in a project.
+    ///
+    /// # Arguments
+    /// - `project_id`: The project identifier.
+    /// - `address`: The address to check.
+    /// - `role`: The role to check ("super_admin", "admin", "ngo", "vendor", "beneficiary").
+    pub fn has_role(env: Env, project_id: String, address: Address, role: String) -> bool {
+        let _ = is_valid_identifier(&env, &project_id);
+        let roles = get_roles(&env, &project_id);
+        
+        let super_admin_str = String::from_str(&env, "super_admin");
+        let admin_str = String::from_str(&env, "admin");
+        let ngo_str = String::from_str(&env, "ngo");
+        let vendor_str = String::from_str(&env, "vendor");
+        let beneficiary_str = String::from_str(&env, "beneficiary");
+        
+        if role == super_admin_str {
+            roles.super_admins.iter().any(|a| a == address)
+        } else if role == admin_str {
+            roles.admins.iter().any(|a| a == address)
+        } else if role == ngo_str {
+            roles.ngos.iter().any(|a| a == address)
+        } else if role == vendor_str {
+            roles.vendors.iter().any(|a| a == address)
+        } else if role == beneficiary_str {
+            roles.beneficiaries.iter().any(|a| a == address)
+        } else {
+            false
+        }
+    }
+
+    /// Transfers contract ownership to a new address.
+    ///
+    /// # Arguments
+    /// - `caller`: Current owner.
+    /// - `new_owner`: New owner address.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::InvalidInput`
+    pub fn transfer_ownership(
+        env: Env,
+        caller: Address,
+        new_owner: Address,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        
+        let owner: Address = env
+            .storage()
+            .persistent()
+            .get(&Symbol::new(&env, OWNER_KEY))
+            .ok_or(ContractError::Unauthorized)?;
+        
+        if caller != owner {
+            return Err(ContractError::Unauthorized);
+        }
+        
+        // validate new owner is not the same as current owner
+        if new_owner == owner {
+            return Err(ContractError::InvalidInput);
+        }
+        
+        let old_owner = owner.clone();
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, OWNER_KEY), &new_owner);
+
+        env.events().publish(
+            (Symbol::new(&env, "ownership_transferred"),),
+            (old_owner, new_owner),
+        );
+        
+        Ok(())
+    }
+
+    /// Extends the TTL (Time To Live) for contract storage.
+    ///
+    /// # Arguments
+    /// - `caller`: owner or contract admin.
+    /// - `extend_to`: Number of ledgers to extend.
+    ///
+    /// # Errors
+    /// - `ContractError::Unauthorized`
+    /// - `ContractError::InvalidInput`
+    pub fn extend_ttl(
+        env: Env,
+        caller: Address,
+        extend_to: u32,
+    ) -> Result<(), ContractError> {
+        require_owner_or_contract_admin(&env, &caller)?;
+        
+        // validate extend_to is reasonable (!too large to avoid abuse)
+        if extend_to == 0 || extend_to > 5_184_000 {  // max ~1 year (assuming 17280 ledgers/day)
+            return Err(ContractError::InvalidInput);
+        }
+        
+        // Extend critical storage keys only if they exist
+        let owner_key = Symbol::new(&env, OWNER_KEY);
+        if env.storage().persistent().has(&owner_key) {
+            env.storage().persistent().extend_ttl(&owner_key, extend_to, extend_to);
+        }
+        
+        let admins_key = Symbol::new(&env, CONTRACT_ADMINS_KEY);
+        if env.storage().persistent().has(&admins_key) {
+            env.storage().persistent().extend_ttl(&admins_key, extend_to, extend_to);
+        }
+        
+        let paused_key = Symbol::new(&env, PAUSED_KEY);
+        if env.storage().persistent().has(&paused_key) {
+            env.storage().persistent().extend_ttl(&paused_key, extend_to, extend_to);
+        }
+        
+        Ok(())
     }
 }
 

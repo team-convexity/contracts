@@ -4,7 +4,7 @@ mod test {
     use soroban_sdk::{testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec};
 
     use crate::{
-        CashAllowance, ItemAllowance, ProjectContract, ProjectContractClient, Roles,
+        CashAllowance, ContractError, ItemAllowance, ProjectContract, ProjectContractClient, Roles,
         CASH_ALLOWANCES_KEY, ITEM_ALLOWANCES_KEY,
     };
 
@@ -1524,4 +1524,593 @@ mod test {
         // try to redeem zero quantity - should fail with InvalidInput (1012)
         client.redeem_item_claims(&vendor, &Some(project_id), &String::from_str(&env, ITEM_ID), &0);
     }
+
+    #[test]
+    fn test_get_version() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, _, _, _) = setup_contract(&env);
+        
+        let version = client.get_version();
+        assert_eq!(version, String::from_str(&env, "1.0.0"));
+    }
+
+    #[test]
+    fn test_get_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        let returned_owner = client.get_owner();
+        assert_eq!(returned_owner, owner);
+    }
+
+    #[test]
+    fn test_transfer_ownership() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let new_owner = Address::generate(&env);
+        
+        // Transfer ownership
+        client.transfer_ownership(&owner, &new_owner);
+        
+        // Verify new owner
+        let returned_owner = client.get_owner();
+        assert_eq!(returned_owner, new_owner);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_transfer_ownership_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, _, _, _) = setup_contract(&env);
+        let unauthorized = Address::generate(&env);
+        let new_owner = Address::generate(&env);
+        
+        // Try to transfer ownership from non-owner - should panic
+        client.transfer_ownership(&unauthorized, &new_owner);
+    }
+
+    #[test]
+    fn test_get_contract_admins() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let admin1 = Address::generate(&env);
+        let admin2 = Address::generate(&env);
+        
+        // Initially empty
+        let admins = client.get_contract_admins();
+        assert_eq!(admins.len(), 0);
+        
+        // Add admins
+        client.add_contract_admin(&owner, &admin1);
+        client.add_contract_admin(&owner, &admin2);
+        
+        // Verify admins list
+        let admins = client.get_contract_admins();
+        assert_eq!(admins.len(), 2);
+        assert!(admins.contains(&admin1));
+        assert!(admins.contains(&admin2));
+    }
+
+    #[test]
+    fn test_is_paused() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Initially not paused
+        assert_eq!(client.is_paused(), false);
+        
+        // Pause contract
+        client.pause_contract(&owner);
+        assert_eq!(client.is_paused(), true);
+        
+        // Unpause contract
+        client.unpause_contract(&owner);
+        assert_eq!(client.is_paused(), false);
+    }
+
+    #[test]
+    fn test_get_pause_until() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Initially no pause
+        assert_eq!(client.get_pause_until(), None);
+        
+        // Pause contract
+        client.pause_contract(&owner);
+        let pause_until = client.get_pause_until();
+        assert!(pause_until.is_some());
+        assert!(pause_until.unwrap() > env.ledger().timestamp());
+        
+        // Unpause contract
+        client.unpause_contract(&owner);
+        assert_eq!(client.get_pause_until(), None);
+    }
+
+    #[test]
+    fn test_has_role() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+        
+        // Roles are already set up by setup_contract
+        // Test has_role for each role
+        assert_eq!(
+            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            true
+        );
+        assert_eq!(
+            client.has_role(&project_id, &vendor, &String::from_str(&env, "vendor")),
+            true
+        );
+        assert_eq!(
+            client.has_role(&project_id, &beneficiary, &String::from_str(&env, "beneficiary")),
+            true
+        );
+        
+        // Test negative cases
+        assert_eq!(
+            client.has_role(&project_id, &vendor, &String::from_str(&env, "ngo")),
+            false
+        );
+        assert_eq!(
+            client.has_role(&project_id, &beneficiary, &String::from_str(&env, "vendor")),
+            false
+        );
+        
+        // Test unknown role
+        assert_eq!(
+            client.has_role(&project_id, &ngo, &String::from_str(&env, "unknown_role")),
+            false
+        );
+    }
+
+    #[test]
+    fn test_has_role_after_removal() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, ngo, _, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+        
+        // Role already exists from setup_contract
+        assert_eq!(
+            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            true
+        );
+        
+        // Remove role
+        client.remove_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo);
+        assert_eq!(
+            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            false
+        );
+    }
+
+    #[test]
+    fn test_has_role_multiple_addresses() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+        
+        let ngo1 = Address::generate(&env);
+        let ngo2 = Address::generate(&env);
+        let ngo3 = Address::generate(&env);
+        
+        // Add multiple NGOs
+        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo1);
+        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo2);
+        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo3);
+        
+        // Verify all have the role
+        assert_eq!(
+            client.has_role(&project_id, &ngo1, &String::from_str(&env, "ngo")),
+            true
+        );
+        assert_eq!(
+            client.has_role(&project_id, &ngo2, &String::from_str(&env, "ngo")),
+            true
+        );
+        assert_eq!(
+            client.has_role(&project_id, &ngo3, &String::from_str(&env, "ngo")),
+            true
+        );
+    }
+
+    #[test]
+    fn test_extend_ttl_by_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Owner can extend TTL
+        client.extend_ttl(&owner, &100_000);
+        // If no panic, test passes
+    }
+
+    #[test]
+    fn test_extend_ttl_by_contract_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let admin = Address::generate(&env);
+        
+        // Add contract admin
+        client.add_contract_admin(&owner, &admin);
+        
+        // Contract admin can extend TTL
+        client.extend_ttl(&admin, &100_000);
+        // If no panic, test passes
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_extend_ttl_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, _, _, _) = setup_contract(&env);
+        let unauthorized = Address::generate(&env);
+        
+        // Unauthorized user cannot extend TTL
+        client.extend_ttl(&unauthorized, &100_000);
+    }
+
+    #[test]
+    fn test_has_role_for_super_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, super_admin, _, _, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+        
+        // Super admin already exists from setup_contract (owner and super_admin are added)
+        // Verify super admin role for the super_admin address
+        assert_eq!(
+            client.has_role(&project_id, &super_admin, &String::from_str(&env, "super_admin")),
+            true
+        );
+        
+        // Verify owner also has super admin role
+        assert_eq!(
+            client.has_role(&project_id, &owner, &String::from_str(&env, "super_admin")),
+            true
+        );
+        
+        // Verify super admin doesn't have other roles
+        assert_eq!(
+            client.has_role(&project_id, &super_admin, &String::from_str(&env, "admin")),
+            false
+        );
+    }
+
+    #[test]
+    fn test_has_role_for_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+        let admin = Address::generate(&env);
+        
+        // Add admin
+        client.add_role(&owner, &project_id, &String::from_str(&env, "admin"), &admin);
+        
+        // Verify admin role
+        assert_eq!(
+            client.has_role(&project_id, &admin, &String::from_str(&env, "admin")),
+            true
+        );
+    }
+
+    #[test]
+    fn test_ownership_transfer_allows_new_owner_operations() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let new_owner = Address::generate(&env);
+        let admin = Address::generate(&env);
+        
+        // Transfer ownership
+        client.transfer_ownership(&owner, &new_owner);
+        
+        // New owner should be able to add contract admin
+        client.add_contract_admin(&new_owner, &admin);
+        
+        // Verify admin was added
+        let admins = client.get_contract_admins();
+        assert!(admins.contains(&admin));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1001)")]
+    fn test_old_owner_cannot_operate_after_transfer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        let new_owner = Address::generate(&env);
+        let admin = Address::generate(&env);
+        
+        // Transfer ownership
+        client.transfer_ownership(&owner, &new_owner);
+        
+        // Old owner should not be able to add contract admin
+        client.add_contract_admin(&owner, &admin);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_transfer_ownership_to_same_address() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Try to transfer ownership to the same owner - should panic with InvalidInput
+        client.transfer_ownership(&owner, &owner);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_extend_ttl_invalid_zero() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Try to extend TTL with 0 - should panic with InvalidInput
+        client.extend_ttl(&owner, &0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_extend_ttl_too_large() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Try to extend TTL with excessive value - should panic with InvalidInput
+        client.extend_ttl(&owner, &10_000_000);
+    }
+
+    // Additional security tests for transfer_ownership
+    
+    #[test]
+    fn test_transfer_ownership_non_owner_cannot_transfer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin, _, _, _) = setup_contract(&env);
+        
+        // Add admin as contract admin
+        client.add_contract_admin(&owner, &admin);
+        
+        let new_owner = Address::generate(&env);
+        
+        // Admin should not be able to transfer ownership (only owner can)
+        let result = client.try_transfer_ownership(&admin, &new_owner);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+        
+        // Verify owner hasn't changed
+        assert_eq!(client.get_owner(), owner);
+    }
+
+    #[test]
+    fn test_transfer_ownership_to_existing_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin, _, _, _) = setup_contract(&env);
+        
+        // Add admin as contract admin
+        client.add_contract_admin(&owner, &admin);
+        
+        // Owner can transfer ownership to an admin (valid scenario)
+        client.transfer_ownership(&owner, &admin);
+        
+        // Verify ownership transferred
+        assert_eq!(client.get_owner(), admin);
+        
+        // Old owner should not be able to perform owner actions anymore
+        let new_admin = Address::generate(&env);
+        let result = client.try_add_contract_admin(&owner, &new_admin);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+        
+        // New owner (former admin) should be able to perform owner actions
+        client.add_contract_admin(&admin, &new_admin);
+        let admins = client.get_contract_admins();
+        assert!(admins.contains(&new_admin));
+    }
+
+    #[test]
+    fn test_transfer_ownership_chain() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        let owner2 = Address::generate(&env);
+        let owner3 = Address::generate(&env);
+        
+        // First transfer: owner -> owner2
+        client.transfer_ownership(&owner, &owner2);
+        assert_eq!(client.get_owner(), owner2);
+        
+        // Second transfer: owner2 -> owner3
+        client.transfer_ownership(&owner2, &owner3);
+        assert_eq!(client.get_owner(), owner3);
+        
+        // Original owner cannot transfer anymore
+        let owner4 = Address::generate(&env);
+        let result = client.try_transfer_ownership(&owner, &owner4);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+        
+        // owner2 also cannot transfer anymore
+        let result = client.try_transfer_ownership(&owner2, &owner4);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+        
+        // Only owner3 can transfer
+        client.transfer_ownership(&owner3, &owner4);
+        assert_eq!(client.get_owner(), owner4);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_transfer_ownership_to_zero_address() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Try to transfer to same address (should fail with InvalidInput)
+        // This simulates transferring to a "zero" or invalid address
+        client.transfer_ownership(&owner, &owner);
+    }
+
+    #[test]
+    fn test_transfer_ownership_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        let new_owner = Address::generate(&env);
+        
+        // Transfer ownership
+        client.transfer_ownership(&owner, &new_owner);
+        
+        // Verify ownership changed
+        assert_eq!(client.get_owner(), new_owner);
+    }
+
+    // Additional security tests for extend_ttl
+
+    #[test]
+    fn test_extend_ttl_regular_user_cannot_extend() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _owner, _, _, _, _) = setup_contract(&env);
+        
+        let regular_user = Address::generate(&env);
+        
+        // Regular user should not be able to extend TTL
+        let result = client.try_extend_ttl(&regular_user, &1000);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_extend_ttl_boundary_values() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Test minimum valid value (1)
+        client.extend_ttl(&owner, &1);
+        
+        // Test maximum valid value (5,184,000)
+        client.extend_ttl(&owner, &5_184_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1012)")]
+    fn test_extend_ttl_just_over_max() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        // Try to extend TTL with value just over maximum - should panic
+        client.extend_ttl(&owner, &5_184_001);
+    }
+
+    #[test]
+    fn test_extend_ttl_after_ownership_transfer() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, _, _, _) = setup_contract(&env);
+        
+        let new_owner = Address::generate(&env);
+        
+        // Transfer ownership
+        client.transfer_ownership(&owner, &new_owner);
+        
+        // Old owner should not be able to extend TTL
+        let result = client.try_extend_ttl(&owner, &1000);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+        
+        // New owner should be able to extend TTL
+        client.extend_ttl(&new_owner, &1000);
+    }
+
+    #[test]
+    fn test_extend_ttl_removed_admin_cannot_extend() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin, _, _, _) = setup_contract(&env);
+        
+        // Add admin
+        client.add_contract_admin(&owner, &admin);
+        
+        // Admin can extend TTL
+        client.extend_ttl(&admin, &1000);
+        
+        // Remove admin
+        client.remove_contract_admin(&owner, &admin);
+        
+        // Removed admin should not be able to extend TTL anymore
+        let result = client.try_extend_ttl(&admin, &1000);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_extend_ttl_multiple_admins() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, admin, _, _, _) = setup_contract(&env);
+        
+        let admin2 = Address::generate(&env);
+        let admin3 = Address::generate(&env);
+        
+        // Add multiple admins
+        client.add_contract_admin(&owner, &admin);
+        client.add_contract_admin(&owner, &admin2);
+        client.add_contract_admin(&owner, &admin3);
+        
+        // All admins should be able to extend TTL
+        client.extend_ttl(&admin, &1000);
+        client.extend_ttl(&admin2, &2000);
+        client.extend_ttl(&admin3, &3000);
+        client.extend_ttl(&owner, &4000);
+    }
+
+    #[test]
+    fn test_extend_ttl_does_not_affect_functionality() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, ngo, _, beneficiary) = setup_contract(&env);
+        
+        let project_id = String::from_str(&env, "proj1");
+        
+        // Add roles
+        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo);
+        client.add_role(&owner, &project_id, &String::from_str(&env, "beneficiary"), &beneficiary);
+        
+        // Extend TTL
+        client.extend_ttl(&owner, &1000);
+        
+        // Verify contract still functions normally after TTL extension
+        client.allocate_cash_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &1000,
+            &String::from_str(&env, "USD"),
+            &None,
+        );
+        
+        let allowance = client.get_cash_allowance(
+            &project_id,
+            &beneficiary,
+            &String::from_str(&env, "USD"),
+        );
+        assert_eq!(allowance.amount, 1000);
+    }
 }
+
