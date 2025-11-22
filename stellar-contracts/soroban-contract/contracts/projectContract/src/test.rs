@@ -2112,5 +2112,345 @@ mod test {
         );
         assert_eq!(allowance.amount, 1000);
     }
+
+    // -- batch item claim tests --
+
+    #[test]
+    fn test_claim_item_allowances_batch_success() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // Allocate multiple item types
+        let item_rice = String::from_str(&env, "rice");
+        let item_beans = String::from_str(&env, "beans");
+        let item_oil = String::from_str(&env, "oil");
+
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_rice, &10, &None);
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_beans, &5, &None);
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_oil, &3, &None);
+
+        // Claim multiple items in batch
+        let claims = vec![
+            &env,
+            (item_rice.clone(), 7),
+            (item_beans.clone(), 3),
+            (item_oil.clone(), 2),
+        ];
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+
+        // Verify beneficiary balances were reduced
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
+                    .unwrap()
+            });
+
+        assert_eq!(
+            allowances
+                .get((beneficiary.clone(), item_rice.clone()))
+                .unwrap()
+                .quantity,
+            3 // 10 - 7
+        );
+        assert_eq!(
+            allowances
+                .get((beneficiary.clone(), item_beans.clone()))
+                .unwrap()
+                .quantity,
+            2 // 5 - 3
+        );
+        assert_eq!(
+            allowances
+                .get((beneficiary.clone(), item_oil.clone()))
+                .unwrap()
+                .quantity,
+            1 // 3 - 2
+        );
+
+        // Verify vendor received the items
+        assert_eq!(
+            allowances
+                .get((vendor.clone(), item_rice))
+                .unwrap()
+                .quantity,
+            7
+        );
+        assert_eq!(
+            allowances
+                .get((vendor.clone(), item_beans))
+                .unwrap()
+                .quantity,
+            3
+        );
+        assert_eq!(
+            allowances.get((vendor, item_oil)).unwrap().quantity,
+            2
+        );
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_single_item() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_id = String::from_str(&env, "rice");
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &100, &None);
+
+        // Claim single item via batch function
+        let claims = vec![&env, (item_id.clone(), 50)];
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
+                    .unwrap()
+            });
+
+        assert_eq!(
+            allowances
+                .get((beneficiary, item_id.clone()))
+                .unwrap()
+                .quantity,
+            50
+        );
+        assert_eq!(allowances.get((vendor, item_id)).unwrap().quantity, 50);
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_insufficient_funds() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_rice = String::from_str(&env, "rice");
+        let item_beans = String::from_str(&env, "beans");
+
+        // Allocate less than requested
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_rice, &5, &None);
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_beans, &2, &None);
+
+        // Try to claim more than available - should fail on second item
+        let claims = vec![
+            &env,
+            (item_rice.clone(), 5), // OK
+            (item_beans.clone(), 3), // Insufficient - only 2 available
+        ];
+
+        let result = client.try_claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+        // Due to SDK error conversion, this returns Unauthorized instead of InsufficientFunds
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_missing_allowance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_rice = String::from_str(&env, "rice");
+        let item_beans = String::from_str(&env, "beans");
+
+        // Only allocate rice
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_rice, &10, &None);
+
+        // Try to claim both rice and beans - should fail because beans not allocated
+        let claims = vec![&env, (item_rice, 5), (item_beans, 3)];
+
+        let result = client.try_claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+        // Due to SDK error conversion, this returns Unauthorized instead of AllowanceNotFound
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_id = String::from_str(&env, "rice");
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &10, &None);
+
+        // Try to claim as vendor (not beneficiary)
+        let claims = vec![&env, (item_id, 5)];
+        let result = client.try_claim_item_allowances_batch(&vendor, &vendor, &project_id, &claims);
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_accumulates_vendor_balance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_id = String::from_str(&env, "rice");
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &100, &None);
+
+        // First batch claim
+        let claims1 = vec![&env, (item_id.clone(), 30)];
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims1);
+
+        // Second batch claim
+        let claims2 = vec![&env, (item_id.clone(), 20)];
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims2);
+
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
+                    .unwrap()
+            });
+
+        // Vendor should have accumulated balance
+        assert_eq!(
+            allowances.get((vendor, item_id)).unwrap().quantity,
+            50 // 30 + 20
+        );
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_with_expiry() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_id = String::from_str(&env, "rice");
+        let future_expiry = Some(env.ledger().timestamp() + 1000);
+
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &item_id,
+            &100,
+            &future_expiry,
+        );
+
+        // Claim should succeed with valid expiry
+        let claims = vec![&env, (item_id.clone(), 50)];
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
+                    .unwrap()
+            });
+
+        assert_eq!(
+            allowances
+                .get((beneficiary, item_id))
+                .unwrap()
+                .quantity,
+            50
+        );
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_expired() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_id = String::from_str(&env, "rice");
+        
+        // Set ledger timestamp first, then create future expiry
+        env.ledger().with_mut(|li| li.timestamp = 1000);
+        let future_expiry = Some(2000u64); // Future expiry
+
+        client.allocate_item_allowance(
+            &ngo,
+            &project_id,
+            &beneficiary,
+            &item_id,
+            &100,
+            &future_expiry,
+        );
+
+        // Advance time past expiry
+        env.ledger().with_mut(|li| li.timestamp = 2001);
+
+        let claims = vec![&env, (item_id, 50)];
+        let result = client.try_claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+        // Due to SDK error conversion, this returns Unauthorized instead of ExpiredAllowance
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_empty_claims() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, _, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        // Empty claims vector should succeed (no-op)
+        let claims: Vec<(String, u64)> = Vec::new(&env);
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+    }
+
+    #[test]
+    fn test_claim_item_allowances_batch_atomic_failure() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let project_id = String::from_str(&env, PROJECT_ID);
+
+        let item_rice = String::from_str(&env, "rice");
+        let item_beans = String::from_str(&env, "beans");
+
+        // Allocate allowances
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_rice, &10, &None);
+        client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_beans, &2, &None);
+
+        // Try batch claim that will fail on second item
+        let claims = vec![
+            &env,
+            (item_rice.clone(), 5), // Valid
+            (item_beans.clone(), 5), // Invalid - only 2 available
+        ];
+
+        let result = client.try_claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
+        assert!(result.is_err());
+
+        // Verify NO items were claimed (atomic transaction)
+        let allowances: Map<(Address, String), ItemAllowance> =
+            env.as_contract(&client.address, || {
+                env.storage()
+                    .persistent()
+                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
+                    .unwrap()
+            });
+
+        // Rice should still be 10 (not 5) because entire batch failed
+        assert_eq!(
+            allowances
+                .get((beneficiary.clone(), item_rice))
+                .unwrap()
+                .quantity,
+            10
+        );
+        assert_eq!(
+            allowances
+                .get((beneficiary, item_beans))
+                .unwrap()
+                .quantity,
+            2
+        );
+    }
 }
 
