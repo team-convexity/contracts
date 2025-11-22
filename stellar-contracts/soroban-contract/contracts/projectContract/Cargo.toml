@@ -1,6 +1,6 @@
 [package]
 name = "projectcontract"
-version = "0.0.2"
+version = "1.0.0"
 edition = "2021"
 publish = false
 
