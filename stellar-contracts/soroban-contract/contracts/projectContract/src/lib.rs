@@ -537,8 +537,6 @@ impl ProjectContract {
 
         if let Some(vendor) = vendor {
             is_valid_transfer_parties(&caller, &vendor)?;
-            // ensure vendor exists in roles (defense-in-depth, require_role occurs on redeem)
-            is_valid_vendor(&env, &project_id, &vendor)?;
             let vendor_key = (vendor, currency);
             let mut vendor_allowance: CashAllowance =
                 allowances.get(vendor_key.clone()).unwrap_or(CashAllowance {
