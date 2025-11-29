@@ -113,6 +113,13 @@ const ITEM_ALLOWANCES_KEY: &str = "items";
 const PAUSE_UNTIL_KEY: &str = "pause_until";
 const CONTRACT_ADMINS_KEY: &str = "contract_admins";
 
+// role constants
+const ROLE_SUPER_ADMIN: u32 = 0;
+const ROLE_ADMIN: u32 = 1;
+const ROLE_NGO: u32 = 2;
+const ROLE_VENDOR: u32 = 3;
+const ROLE_BENEFICIARY: u32 = 4;
+
 // validation limits
 const MAX_ID_LEN: u32 = 100; // max length for project_id, currency, item_id. Check Project service's README for more info.
 const MAX_BATCH_LEN: u32 = 200; // cap batch sizes to avoid excessive compute
@@ -124,14 +131,14 @@ const MAX_ROLE_MEMBERS: u32 = 1000; // per-role membership cap per project (and 
 #[contracttype]
 pub struct RoleAssigned {
     pub project_id: String,
-    pub role: String,
+    pub role: u32,
     pub assignee: Address,
 }
 
 #[contracttype]
 pub struct RoleRemovedEvent {
     pub project_id: String,
-    pub role: String,
+    pub role: u32,
     pub member: Address,
 }
 
@@ -208,7 +215,7 @@ impl ProjectContract {
     /// # Arguments
     /// - `caller`: owner address.
     /// - `project_id`: project identifier.
-    /// - `role`: one of "super_admin", "admin", "ngo", "vendor", "beneficiary".
+    /// - `role`: 0=super_admin, 1=admin, 2=ngo, 3=vendor, 4=beneficiary.
     /// - `new_member`: address to add.
     ///
     /// # Errors
@@ -221,7 +228,7 @@ impl ProjectContract {
         env: Env,
         caller: Address,
         project_id: String,
-        role: String,
+        role: u32,
         new_member: Address,
     ) -> Result<(), ContractError> {
         require_owner(&env, &caller)?;
@@ -229,24 +236,13 @@ impl ProjectContract {
 
         let mut roles = get_roles(&env, &project_id);
 
-        let super_admin = String::from_str(&env, "super_admin");
-        let admin = String::from_str(&env, "admin");
-        let ngo = String::from_str(&env, "ngo");
-        let vendor = String::from_str(&env, "vendor");
-        let beneficiary = String::from_str(&env, "beneficiary");
-
-        let role_vec = if role == super_admin {
-            &mut roles.super_admins
-        } else if role == admin {
-            &mut roles.admins
-        } else if role == ngo {
-            &mut roles.ngos
-        } else if role == vendor {
-            &mut roles.vendors
-        } else if role == beneficiary {
-            &mut roles.beneficiaries
-        } else {
-            return Err(ContractError::InvalidRole);
+        let role_vec = match role {
+            ROLE_SUPER_ADMIN => &mut roles.super_admins,
+            ROLE_ADMIN => &mut roles.admins,
+            ROLE_NGO => &mut roles.ngos,
+            ROLE_VENDOR => &mut roles.vendors,
+            ROLE_BENEFICIARY => &mut roles.beneficiaries,
+            _ => return Err(ContractError::InvalidRole),
         };
 
         check_role_limits(role_vec, &new_member)?;
@@ -269,7 +265,7 @@ impl ProjectContract {
     /// # Arguments
     /// - `caller`: owner address.
     /// - `project_id`: project identifier.
-    /// - `role`: role name.
+    /// - `role`: role integer (0=super_admin, 1=admin, 2=ngo, 3=vendor, 4=beneficiary).
     /// - `member_to_remove`: address to remove.
     ///
     /// # Errors
@@ -279,31 +275,20 @@ impl ProjectContract {
         env: Env,
         caller: Address,
         project_id: String,
-        role: String,
+        role: u32,
         member_to_remove: Address,
     ) -> Result<(), ContractError> {
         require_owner(&env, &caller)?;
         is_valid_identifier(&env, &project_id)?;
         let mut roles = get_roles(&env, &project_id);
 
-        let super_admin = String::from_str(&env, "super_admin");
-        let admin = String::from_str(&env, "admin");
-        let ngo = String::from_str(&env, "ngo");
-        let vendor = String::from_str(&env, "vendor");
-        let beneficiary = String::from_str(&env, "beneficiary");
-
-        let role_vec = if role == super_admin {
-            &mut roles.super_admins
-        } else if role == admin {
-            &mut roles.admins
-        } else if role == ngo {
-            &mut roles.ngos
-        } else if role == vendor {
-            &mut roles.vendors
-        } else if role == beneficiary {
-            &mut roles.beneficiaries
-        } else {
-            return Err(ContractError::InvalidRole);
+        let role_vec = match role {
+            ROLE_SUPER_ADMIN => &mut roles.super_admins,
+            ROLE_ADMIN => &mut roles.admins,
+            ROLE_NGO => &mut roles.ngos,
+            ROLE_VENDOR => &mut roles.vendors,
+            ROLE_BENEFICIARY => &mut roles.beneficiaries,
+            _ => return Err(ContractError::InvalidRole),
         };
 
         *role_vec = to_soroban_vec(&env, role_vec.iter().filter(|m| *m != member_to_remove));
@@ -462,7 +447,7 @@ impl ProjectContract {
         expiry: Option<u64>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "ngo")?;
+        require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_amount(amount)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &currency)?;
@@ -525,7 +510,7 @@ impl ProjectContract {
         amount: u64,
         vendor: Option<Address>,
     ) -> Result<(), ContractError> {
-        require_role(&env, &caller, &project_id, "beneficiary")?;
+        require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &currency)?;
         is_valid_amount(amount)?;
@@ -602,7 +587,7 @@ impl ProjectContract {
         expiry: Option<u64>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "ngo")?;
+        require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_quantity(quantity)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &item_id)?;
@@ -666,7 +651,7 @@ impl ProjectContract {
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
-        require_role(&env, &caller, &project_id, "beneficiary")?;
+        require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &item_id)?;
         is_valid_quantity(quantity)?;
@@ -741,7 +726,7 @@ impl ProjectContract {
         project_id: String,
         claims: Vec<(String, u64)>,
     ) -> Result<(), ContractError> {
-        require_role(&env, &caller, &project_id, "beneficiary")?;
+        require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_transfer_parties(&caller, &vendor)?;
         let roles = get_roles(&env, &project_id);
@@ -832,7 +817,7 @@ impl ProjectContract {
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "ngo")?;
+        require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
@@ -894,7 +879,7 @@ impl ProjectContract {
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "ngo")?;
+        require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
@@ -963,7 +948,7 @@ impl ProjectContract {
         amount: u64,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "beneficiary")?;
+        require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &currency)?;
         is_valid_amount(amount)?;
@@ -1036,7 +1021,7 @@ impl ProjectContract {
         quantity: u64,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
-        require_role(&env, &caller, &project_id, "beneficiary")?;
+        require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &item_id)?;
         is_valid_quantity(quantity)?;
@@ -1110,7 +1095,7 @@ impl ProjectContract {
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
         check_paused(&env)?;
 
-        require_role(&env, &vendor, &project_id, "vendor")?;
+        require_role(&env, &vendor, &project_id, ROLE_VENDOR)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &item_id)?;
         is_valid_quantity(quantity)?;
@@ -1176,7 +1161,7 @@ impl ProjectContract {
         let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
         check_paused(&env)?;
 
-        require_role(&env, &vendor, &project_id, "vendor")?;
+        require_role(&env, &vendor, &project_id, ROLE_VENDOR)?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_identifier(&env, &currency)?;
         is_valid_amount(amount)?;
@@ -1418,29 +1403,18 @@ impl ProjectContract {
     /// # Arguments
     /// - `project_id`: The project identifier.
     /// - `address`: The address to check.
-    /// - `role`: The role to check ("super_admin", "admin", "ngo", "vendor", "beneficiary").
-    pub fn has_role(env: Env, project_id: String, address: Address, role: String) -> bool {
+    /// - `role`: The role integer (0=super_admin, 1=admin, 2=ngo, 3=vendor, 4=beneficiary).
+    pub fn has_role(env: Env, project_id: String, address: Address, role: u32) -> bool {
         let _ = is_valid_identifier(&env, &project_id);
         let roles = get_roles(&env, &project_id);
 
-        let super_admin_str = String::from_str(&env, "super_admin");
-        let admin_str = String::from_str(&env, "admin");
-        let ngo_str = String::from_str(&env, "ngo");
-        let vendor_str = String::from_str(&env, "vendor");
-        let beneficiary_str = String::from_str(&env, "beneficiary");
-
-        if role == super_admin_str {
-            roles.super_admins.iter().any(|a| a == address)
-        } else if role == admin_str {
-            roles.admins.iter().any(|a| a == address)
-        } else if role == ngo_str {
-            roles.ngos.iter().any(|a| a == address)
-        } else if role == vendor_str {
-            roles.vendors.iter().any(|a| a == address)
-        } else if role == beneficiary_str {
-            roles.beneficiaries.iter().any(|a| a == address)
-        } else {
-            false
+        match role {
+            ROLE_SUPER_ADMIN => roles.super_admins.iter().any(|a| a == address),
+            ROLE_ADMIN => roles.admins.iter().any(|a| a == address),
+            ROLE_NGO => roles.ngos.iter().any(|a| a == address),
+            ROLE_VENDOR => roles.vendors.iter().any(|a| a == address),
+            ROLE_BENEFICIARY => roles.beneficiaries.iter().any(|a| a == address),
+            _ => false,
         }
     }
 
@@ -1665,17 +1639,17 @@ fn require_role(
     env: &Env,
     caller: &Address,
     project_id: &String,
-    required_role: &str,
+    required_role: u32,
 ) -> Result<(), ContractError> {
     caller.require_auth();
     let roles = get_roles(env, project_id);
 
     let has_access = match required_role {
-        "super_admin" => roles.super_admins.contains(caller),
-        "admin" => roles.admins.contains(caller) || roles.super_admins.contains(caller),
-        "ngo" => roles.ngos.contains(caller) || roles.admins.contains(caller),
-        "beneficiary" => roles.beneficiaries.contains(caller),
-        "vendor" => roles.vendors.contains(caller),
+        ROLE_SUPER_ADMIN => roles.super_admins.contains(caller),
+        ROLE_ADMIN => roles.admins.contains(caller) || roles.super_admins.contains(caller),
+        ROLE_NGO => roles.ngos.contains(caller) || roles.admins.contains(caller),
+        ROLE_BENEFICIARY => roles.beneficiaries.contains(caller),
+        ROLE_VENDOR => roles.vendors.contains(caller),
         _ => {
             return Err(ContractError::InvalidRole);
         }
