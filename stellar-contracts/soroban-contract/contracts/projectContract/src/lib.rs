@@ -744,7 +744,10 @@ impl ProjectContract {
         require_role(&env, &caller, &project_id, "beneficiary")?;
         is_valid_identifier(&env, &project_id)?;
         is_valid_transfer_parties(&caller, &vendor)?;
-        is_valid_vendor(&env, &project_id, &vendor)?;
+        let roles = get_roles(&env, &project_id);
+        if !roles.vendors.contains(&vendor) {
+            return Err(ContractError::InvalidInput);
+        }
         is_valid_batch_len(claims.len())?;
 
         let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
@@ -840,8 +843,6 @@ impl ProjectContract {
             .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
-        // buffer events until after storage commit for consistency
-        let mut pending_events: Vec<(Address, String, u64)> = Vec::new(&env);
         for (allowee, currency, amount, expiry) in allowances {
             is_valid_amount(amount)?;
             is_valid_identifier(&env, &currency)?;
@@ -858,14 +859,6 @@ impl ProjectContract {
                 CashAllowance { amount, expiry }
             };
             allowances_map.set(key, new_allowance);
-            pending_events.push_back((allowee, currency, amount));
-        }
-
-        env.storage()
-            .persistent()
-            .set(&storage_key, &allowances_map);
-        // emit buffered events after commit
-        for (allowee, currency, amount) in pending_events.iter() {
             env.events().publish(
                 (AllowanceAllocated {
                     project_id: project_id.clone(),
@@ -876,6 +869,10 @@ impl ProjectContract {
                 (),
             );
         }
+
+        env.storage()
+            .persistent()
+            .set(&storage_key, &allowances_map);
         Ok(())
     }
 
@@ -908,7 +905,6 @@ impl ProjectContract {
             .get(&storage_key)
             .unwrap_or_else(|| Map::new(&env));
 
-        let mut pending_events: Vec<(Address, String, u64)> = Vec::new(&env);
         for (allowee, item_id, quantity, expiry) in allowances {
             is_valid_quantity(quantity)?;
             is_valid_identifier(&env, &item_id)?;
@@ -925,13 +921,6 @@ impl ProjectContract {
                 ItemAllowance { quantity, expiry }
             };
             allowances_map.set(key, new_allowance);
-            pending_events.push_back((allowee, item_id, quantity));
-        }
-
-        env.storage()
-            .persistent()
-            .set(&storage_key, &allowances_map);
-        for (allowee, item_id, quantity) in pending_events.iter() {
             env.events().publish(
                 (AllowanceAllocated {
                     project_id: project_id.clone(),
@@ -942,6 +931,10 @@ impl ProjectContract {
                 (),
             );
         }
+
+        env.storage()
+            .persistent()
+            .set(&storage_key, &allowances_map);
         Ok(())
     }
 
