@@ -8,9 +8,16 @@ mod test {
         CASH_ALLOWANCES_KEY, ITEM_ALLOWANCES_KEY,
     };
 
-    const PROJECT_ID: &str = "project1";
+    const PROJECT_ID: u64 = 1;
     const ITEM_ID: &str = "item1";
     const CURRENCY: &str = "USD";
+    
+    // Role constants matching lib.rs
+    const ROLE_SUPER_ADMIN: u32 = 0;
+    const ROLE_ADMIN: u32 = 1;
+    const ROLE_NGO: u32 = 2;
+    const ROLE_VENDOR: u32 = 3;
+    const ROLE_BENEFICIARY: u32 = 4;
 
     fn setup_contract(
         env: &Env,
@@ -37,20 +44,20 @@ mod test {
         env.as_contract(&contract_id, || {
             let cash_key = (
                 Symbol::new(env, CASH_ALLOWANCES_KEY),
-                String::from_str(env, PROJECT_ID),
+                PROJECT_ID,
             );
             let cash_map: Map<(Address, String), CashAllowance> = Map::new(env);
             env.storage().persistent().set(&cash_key, &cash_map);
 
             let items_key = (
                 Symbol::new(env, ITEM_ALLOWANCES_KEY),
-                String::from_str(env, PROJECT_ID),
+                PROJECT_ID,
             );
             let items_map: Map<(Address, String), ItemAllowance> = Map::new(env);
             env.storage().persistent().set(&items_key, &items_map);
 
             // setup roles
-            let roles_key = (Symbol::new(env, "roles"), String::from_str(env, PROJECT_ID));
+            let roles_key = (Symbol::new(env, "roles"), PROJECT_ID);
             let roles = Roles {
                 super_admins: vec![env, owner.clone(), super_admin.clone()],
                 admins: vec![env],
@@ -90,7 +97,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -122,7 +129,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -161,7 +168,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -193,7 +200,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -232,7 +239,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let allowances = vec![
             &env,
@@ -272,7 +279,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let allowances = vec![
             &env,
@@ -312,7 +319,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -352,7 +359,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -392,7 +399,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -431,7 +438,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -470,7 +477,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -490,7 +497,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -510,7 +517,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -529,7 +536,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -548,7 +555,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -567,7 +574,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_item_allowance(
             &ngo,
@@ -586,12 +593,12 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _, _, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.remove_role(
             &owner,
             &project_id,
-            &String::from_str(&env, "beneficiary"),
+            &ROLE_BENEFICIARY,
             &beneficiary,
         );
 
@@ -605,12 +612,12 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, attacker, _, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.remove_role(
             &attacker,
             &project_id,
-            &String::from_str(&env, "beneficiary"),
+            &ROLE_BENEFICIARY,
             &beneficiary,
         );
     }
@@ -738,7 +745,7 @@ mod test {
         client.pause_contract(&owner);
         client.allocate_cash_allowance(
             &ngo,
-            &String::from_str(&env, PROJECT_ID),
+            &PROJECT_ID,
             &beneficiary,
             &100,
             &String::from_str(&env, CURRENCY),
@@ -751,7 +758,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // pause at a known timestamp
         env.ledger().with_mut(|l| l.timestamp = 1_000);
@@ -817,7 +824,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         env.ledger().with_mut(|l| {
             l.timestamp = 1000;
@@ -854,7 +861,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.allocate_cash_allowance(
             &ngo,
@@ -878,7 +885,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, super_admin, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let roles = client.get_roles(&project_id);
         assert!(roles.super_admins.contains(super_admin));
@@ -893,7 +900,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _super_admin, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         let long_currency_str = "WWJLWQLFZJBCADDVJZOYBDLUECAFTXLFSQDKLFWHTPQGVTKMRRWWJLWQLFZJBCADDVJZOYBDLUECAFTXLFSQDKLFWHTPQGVTKMRREXTRA"; // 105 chars
 
         client.allocate_cash_allowance(
@@ -912,17 +919,17 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _sa, _ngo, _beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // fill up NGO role to capacity (1000)
         for _ in 0..1000 {
             let addr = Address::generate(&env);
-            client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &addr);
+            client.add_role(&owner, &project_id, &ROLE_NGO, &addr);
         }
 
         // adding one more; should panic with RoleLimitExceeded (1013)
         let extra = Address::generate(&env);
-        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &extra);
+        client.add_role(&owner, &project_id, &ROLE_NGO, &extra);
     }
 
     #[test]
@@ -930,7 +937,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         env.ledger().with_mut(|l| l.timestamp = 1_000);
         let now = env.ledger().timestamp();
@@ -973,7 +980,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         env.ledger().with_mut(|l| l.timestamp = 2_000);
         let now = env.ledger().timestamp();
@@ -1016,7 +1023,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // existing None, new Some -> stays None
         client.allocate_cash_allowance(
@@ -1083,7 +1090,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         env.ledger().with_mut(|l| l.timestamp = 3_000);
         let now = env.ledger().timestamp();
@@ -1123,7 +1130,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _sa, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         client.pause_contract(&owner);
         let allowances = vec![
@@ -1139,12 +1146,11 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #1012)")]
-    fn test_claim_cash_with_non_vendor_panics() {
+    fn test_claim_cash_to_non_vendor_allowed() {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // allocate to beneficiary
         client.allocate_cash_allowance(
@@ -1156,7 +1162,7 @@ mod test {
             &None,
         );
 
-        // try to claim to a non-vendor address
+        // claim to a non-vendor address is now allowed (validation moved to redeem)
         let not_vendor = Address::generate(&env);
         client.claim_cash_allowance(
             &beneficiary,
@@ -1173,7 +1179,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // first large allocation
         client.allocate_cash_allowance(
@@ -1201,7 +1207,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // setup: give beneficiary a large amount
         client.allocate_cash_allowance(
@@ -1241,7 +1247,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // setup: give beneficiary some items
         client.allocate_item_allowance(
@@ -1283,11 +1289,11 @@ mod test {
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
 
         // create two projects
-        let project_id1 = String::from_str(&env, "project1");
-        let project_id2 = String::from_str(&env, "project2");
+        let project_id1 = 1u64;
+        let project_id2 = 2u64;
 
         // setup roles for project2
-        let roles_key = (Symbol::new(&env, "roles"), project_id2.clone());
+        let roles_key = (Symbol::new(&env, "roles"), project_id2);
         env.as_contract(&client.address, || {
             let roles = Roles {
                 super_admins: vec![&env],
@@ -1332,11 +1338,11 @@ mod test {
         let (client, _owner, _sa, ngo, beneficiary, _vendor) = setup_contract(&env);
 
         // create two projects
-        let project_id1 = String::from_str(&env, "project1");
-        let project_id2 = String::from_str(&env, "project2");
+        let project_id1 = 1u64;
+        let project_id2 = 2u64;
 
         // setup roles for project2
-        let roles_key = (Symbol::new(&env, "roles"), project_id2.clone());
+        let roles_key = (Symbol::new(&env, "roles"), project_id2);
         env.as_contract(&client.address, || {
             let roles = Roles {
                 super_admins: vec![&env],
@@ -1379,7 +1385,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // set initial time
         env.ledger().with_mut(|l| {
@@ -1420,7 +1426,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // set initial time
         env.ledger().with_mut(|l| {
@@ -1487,7 +1493,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, _, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // allocate some cash to vendor
         client.allocate_cash_allowance(
@@ -1509,7 +1515,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, _, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // allocate some items to vendor
         client.allocate_item_allowance(
@@ -1639,36 +1645,36 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         
         // Roles are already set up by setup_contract
         // Test has_role for each role
         assert_eq!(
-            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo, &ROLE_NGO),
             true
         );
         assert_eq!(
-            client.has_role(&project_id, &vendor, &String::from_str(&env, "vendor")),
+            client.has_role(&project_id, &vendor, &ROLE_VENDOR),
             true
         );
         assert_eq!(
-            client.has_role(&project_id, &beneficiary, &String::from_str(&env, "beneficiary")),
+            client.has_role(&project_id, &beneficiary, &ROLE_BENEFICIARY),
             true
         );
         
         // Test negative cases
         assert_eq!(
-            client.has_role(&project_id, &vendor, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &vendor, &ROLE_NGO),
             false
         );
         assert_eq!(
-            client.has_role(&project_id, &beneficiary, &String::from_str(&env, "vendor")),
+            client.has_role(&project_id, &beneficiary, &ROLE_VENDOR),
             false
         );
         
-        // Test unknown role
+        // Test unknown role (999)
         assert_eq!(
-            client.has_role(&project_id, &ngo, &String::from_str(&env, "unknown_role")),
+            client.has_role(&project_id, &ngo, &999),
             false
         );
     }
@@ -1678,18 +1684,18 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _, ngo, _, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         
         // Role already exists from setup_contract
         assert_eq!(
-            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo, &ROLE_NGO),
             true
         );
         
         // Remove role
-        client.remove_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo);
+        client.remove_role(&owner, &project_id, &ROLE_NGO, &ngo);
         assert_eq!(
-            client.has_role(&project_id, &ngo, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo, &ROLE_NGO),
             false
         );
     }
@@ -1699,28 +1705,28 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _, _, _, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         
         let ngo1 = Address::generate(&env);
         let ngo2 = Address::generate(&env);
         let ngo3 = Address::generate(&env);
         
         // Add multiple NGOs
-        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo1);
-        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo2);
-        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo3);
+        client.add_role(&owner, &project_id, &ROLE_NGO, &ngo1);
+        client.add_role(&owner, &project_id, &ROLE_NGO, &ngo2);
+        client.add_role(&owner, &project_id, &ROLE_NGO, &ngo3);
         
         // Verify all have the role
         assert_eq!(
-            client.has_role(&project_id, &ngo1, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo1, &ROLE_NGO),
             true
         );
         assert_eq!(
-            client.has_role(&project_id, &ngo2, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo2, &ROLE_NGO),
             true
         );
         assert_eq!(
-            client.has_role(&project_id, &ngo3, &String::from_str(&env, "ngo")),
+            client.has_role(&project_id, &ngo3, &ROLE_NGO),
             true
         );
     }
@@ -1768,24 +1774,24 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, super_admin, _, _, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         
         // Super admin already exists from setup_contract (owner and super_admin are added)
         // Verify super admin role for the super_admin address
         assert_eq!(
-            client.has_role(&project_id, &super_admin, &String::from_str(&env, "super_admin")),
+            client.has_role(&project_id, &super_admin, &ROLE_SUPER_ADMIN),
             true
         );
         
         // Verify owner also has super admin role
         assert_eq!(
-            client.has_role(&project_id, &owner, &String::from_str(&env, "super_admin")),
+            client.has_role(&project_id, &owner, &ROLE_SUPER_ADMIN),
             true
         );
         
         // Verify super admin doesn't have other roles
         assert_eq!(
-            client.has_role(&project_id, &super_admin, &String::from_str(&env, "admin")),
+            client.has_role(&project_id, &super_admin, &ROLE_ADMIN),
             false
         );
     }
@@ -1795,15 +1801,15 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, owner, _, _, _, _) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
         let admin = Address::generate(&env);
         
         // Add admin
-        client.add_role(&owner, &project_id, &String::from_str(&env, "admin"), &admin);
+        client.add_role(&owner, &project_id, &ROLE_ADMIN, &admin);
         
         // Verify admin role
         assert_eq!(
-            client.has_role(&project_id, &admin, &String::from_str(&env, "admin")),
+            client.has_role(&project_id, &admin, &ROLE_ADMIN),
             true
         );
     }
@@ -2086,11 +2092,11 @@ mod test {
         env.mock_all_auths();
         let (client, owner, _, ngo, _, beneficiary) = setup_contract(&env);
         
-        let project_id = String::from_str(&env, "proj1");
+        let project_id: u64 = 100;
         
         // Add roles
-        client.add_role(&owner, &project_id, &String::from_str(&env, "ngo"), &ngo);
-        client.add_role(&owner, &project_id, &String::from_str(&env, "beneficiary"), &beneficiary);
+        client.add_role(&owner, &project_id, &ROLE_NGO, &ngo);
+        client.add_role(&owner, &project_id, &ROLE_BENEFICIARY, &beneficiary);
         
         // Extend TTL
         client.extend_ttl(&owner, &1000);
@@ -2120,7 +2126,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // Allocate multiple item types
         let item_rice = String::from_str(&env, "rice");
@@ -2197,7 +2203,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_id = String::from_str(&env, "rice");
         client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &100, &None);
@@ -2229,7 +2235,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_rice = String::from_str(&env, "rice");
         let item_beans = String::from_str(&env, "beans");
@@ -2255,7 +2261,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_rice = String::from_str(&env, "rice");
         let item_beans = String::from_str(&env, "beans");
@@ -2276,7 +2282,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_id = String::from_str(&env, "rice");
         client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &10, &None);
@@ -2292,7 +2298,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_id = String::from_str(&env, "rice");
         client.allocate_item_allowance(&ngo, &project_id, &beneficiary, &item_id, &100, &None);
@@ -2325,7 +2331,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_id = String::from_str(&env, "rice");
         let future_expiry = Some(env.ledger().timestamp() + 1000);
@@ -2365,7 +2371,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_id = String::from_str(&env, "rice");
         
@@ -2396,7 +2402,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, _, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         // Empty claims vector should succeed (no-op)
         let claims: Vec<(String, u64)> = Vec::new(&env);
@@ -2408,7 +2414,7 @@ mod test {
         let env = Env::default();
         env.mock_all_auths();
         let (client, _, _, ngo, beneficiary, vendor) = setup_contract(&env);
-        let project_id = String::from_str(&env, PROJECT_ID);
+        let project_id = PROJECT_ID;
 
         let item_rice = String::from_str(&env, "rice");
         let item_beans = String::from_str(&env, "beans");

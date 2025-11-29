@@ -121,7 +121,6 @@ const ROLE_VENDOR: u32 = 3;
 const ROLE_BENEFICIARY: u32 = 4;
 
 // validation limits
-const MAX_ID_LEN: u32 = 100; // max length for project_id, currency, item_id. Check Project service's README for more info.
 const MAX_BATCH_LEN: u32 = 200; // cap batch sizes to avoid excessive compute
 const MAX_EXPIRY_AHEAD_SECS: u64 = 31_536_000; // ~365 days
 const PAUSE_MAX_SECS: u64 = 3600; // max pause window
@@ -1529,14 +1528,6 @@ fn is_valid_amount(amount: u64) -> Result<(), ContractError> {
 
 fn is_valid_quantity(quantity: u64) -> Result<(), ContractError> {
     if quantity == 0 {
-        return Err(ContractError::InvalidInput);
-    }
-    Ok(())
-}
-
-fn is_valid_identifier(_env: &Env, s: &String) -> Result<(), ContractError> {
-    // disallow empty and overly long strings
-    if s.len() == 0 || s.len() > MAX_ID_LEN {
         return Err(ContractError::InvalidInput);
     }
     Ok(())
