@@ -130,14 +130,14 @@ const MAX_ROLE_MEMBERS: u32 = 1000; // per-role membership cap per project (and 
 // -- events --
 #[contracttype]
 pub struct RoleAssigned {
-    pub project_id: String,
+    pub project_id: u64,
     pub role: u32,
     pub assignee: Address,
 }
 
 #[contracttype]
 pub struct RoleRemovedEvent {
-    pub project_id: String,
+    pub project_id: u64,
     pub role: u32,
     pub member: Address,
 }
@@ -145,7 +145,7 @@ pub struct RoleRemovedEvent {
 #[contracttype]
 #[derive(Clone)]
 pub struct AllowanceAllocated {
-    pub project_id: String,
+    pub project_id: u64,
     pub allowee: Address,
     pub currency_or_item: String,
     pub amount: u64,
@@ -154,7 +154,7 @@ pub struct AllowanceAllocated {
 #[contracttype]
 #[derive(Clone)]
 pub struct AllowanceClaimed {
-    pub project_id: String,
+    pub project_id: u64,
     pub allowee: Address,
     pub amount: u64,
 }
@@ -227,12 +227,11 @@ impl ProjectContract {
     pub fn add_role(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         role: u32,
         new_member: Address,
     ) -> Result<(), ContractError> {
         require_owner(&env, &caller)?;
-        is_valid_identifier(&env, &project_id)?;
 
         let mut roles = get_roles(&env, &project_id);
 
@@ -251,7 +250,7 @@ impl ProjectContract {
         set_roles(&env, &project_id, &roles);
         env.events().publish(
             (RoleAssigned {
-                project_id: project_id.clone(),
+                project_id,
                 role,
                 assignee: new_member,
             },),
@@ -274,12 +273,11 @@ impl ProjectContract {
     pub fn remove_role(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         role: u32,
         member_to_remove: Address,
     ) -> Result<(), ContractError> {
         require_owner(&env, &caller)?;
-        is_valid_identifier(&env, &project_id)?;
         let mut roles = get_roles(&env, &project_id);
 
         let role_vec = match role {
@@ -295,7 +293,7 @@ impl ProjectContract {
         set_roles(&env, &project_id, &roles);
         env.events().publish(
             (RoleRemovedEvent {
-                project_id: project_id.clone(),
+                project_id,
                 role,
                 member: member_to_remove,
             },),
@@ -440,7 +438,7 @@ impl ProjectContract {
     pub fn allocate_cash_allowance(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         allowee: Address,
         amount: u64,
         currency: String,
@@ -449,11 +447,10 @@ impl ProjectContract {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_amount(amount)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &currency)?;
+        is_valid_currency_or_item(&env, &currency)?;
         is_future_expiry(&env, expiry)?;
 
-        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -477,7 +474,7 @@ impl ProjectContract {
         let (event_allowee, event_currency) = (key.0, key.1);
         env.events().publish(
             (AllowanceAllocated {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 currency_or_item: event_currency,
                 amount,
@@ -505,17 +502,16 @@ impl ProjectContract {
     pub fn claim_cash_allowance(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         currency: String,
         amount: u64,
         vendor: Option<Address>,
     ) -> Result<(), ContractError> {
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &currency)?;
+        is_valid_currency_or_item(&env, &currency)?;
         is_valid_amount(amount)?;
 
-        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -552,7 +548,7 @@ impl ProjectContract {
         let event_allowee = ben_key.0;
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 amount,
             },),
@@ -578,7 +574,7 @@ impl ProjectContract {
     pub fn allocate_item_allowance(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         allowee: Address,
         item_id: String,
         quantity: u64,
@@ -587,11 +583,10 @@ impl ProjectContract {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_NGO)?;
         is_valid_quantity(quantity)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &item_id)?;
+        is_valid_currency_or_item(&env, &item_id)?;
         check_expiry(&env, expiry)?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -616,7 +611,7 @@ impl ProjectContract {
         let (event_allowee, event_item) = (key.0, key.1);
         env.events().publish(
             (AllowanceAllocated {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 currency_or_item: event_item,
                 amount: quantity,
@@ -645,18 +640,17 @@ impl ProjectContract {
         env: Env,
         caller: Address,
         vendor: Address,
-        project_id: String,
+        project_id: u64,
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &item_id)?;
+        is_valid_currency_or_item(&env, &item_id)?;
         is_valid_quantity(quantity)?;
         is_valid_transfer_parties(&caller, &vendor)?;
         is_valid_vendor(&env, &project_id, &vendor)?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -690,7 +684,7 @@ impl ProjectContract {
         let event_allowee = ben_key.0;
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 amount: quantity,
             },),
@@ -721,11 +715,10 @@ impl ProjectContract {
         env: Env,
         caller: Address,
         vendor: Address,
-        project_id: String,
+        project_id: u64,
         claims: Vec<(String, u64)>,
     ) -> Result<(), ContractError> {
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
-        is_valid_identifier(&env, &project_id)?;
         is_valid_transfer_parties(&caller, &vendor)?;
         let roles = get_roles(&env, &project_id);
         if !roles.vendors.contains(&vendor) {
@@ -733,7 +726,7 @@ impl ProjectContract {
         }
         is_valid_batch_len(claims.len())?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -744,7 +737,7 @@ impl ProjectContract {
         // We consume the claims vector to avoid SDK iterator issues
         for (item_id, quantity) in claims {
             // Validate inputs
-            is_valid_identifier(&env, &item_id)?;
+            is_valid_currency_or_item(&env, &item_id)?;
             is_valid_quantity(quantity)?;
 
             // Check beneficiary has sufficient allowance
@@ -783,7 +776,7 @@ impl ProjectContract {
             // Emit event for this claim
             env.events().publish(
                 (AllowanceClaimed {
-                    project_id: project_id.clone(),
+                    project_id,
                     allowee: caller.clone(),
                     amount: quantity,
                 },),
@@ -811,15 +804,14 @@ impl ProjectContract {
     pub fn allocate_cash_allowances_batch(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_NGO)?;
-        is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
-        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id);
         let mut allowances_map: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -828,7 +820,7 @@ impl ProjectContract {
 
         for (allowee, currency, amount, expiry) in allowances {
             is_valid_amount(amount)?;
-            is_valid_identifier(&env, &currency)?;
+            is_valid_currency_or_item(&env, &currency)?;
             is_future_expiry(&env, expiry)?;
             let key = (allowee.clone(), currency.clone());
             let new_allowance = if let Some(existing) = allowances_map.get(key.clone()) {
@@ -844,7 +836,7 @@ impl ProjectContract {
             allowances_map.set(key, new_allowance);
             env.events().publish(
                 (AllowanceAllocated {
-                    project_id: project_id.clone(),
+                    project_id,
                     allowee,
                     currency_or_item: currency,
                     amount,
@@ -873,15 +865,14 @@ impl ProjectContract {
     pub fn allocate_item_allowances_batch(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         allowances: Vec<(Address, String, u64, Option<u64>)>,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_NGO)?;
-        is_valid_identifier(&env, &project_id)?;
         is_valid_batch_len(allowances.len())?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances_map: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -890,7 +881,7 @@ impl ProjectContract {
 
         for (allowee, item_id, quantity, expiry) in allowances {
             is_valid_quantity(quantity)?;
-            is_valid_identifier(&env, &item_id)?;
+            is_valid_currency_or_item(&env, &item_id)?;
             is_future_expiry(&env, expiry)?;
             let key = (allowee.clone(), item_id.clone());
             let new_allowance = if let Some(existing) = allowances_map.get(key.clone()) {
@@ -906,7 +897,7 @@ impl ProjectContract {
             allowances_map.set(key, new_allowance);
             env.events().publish(
                 (AllowanceAllocated {
-                    project_id: project_id.clone(),
+                    project_id,
                     allowee,
                     currency_or_item: item_id,
                     amount: quantity,
@@ -940,19 +931,18 @@ impl ProjectContract {
     pub fn transfer_cash_allowance(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         new_allowee: Address,
         currency: String,
         amount: u64,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &currency)?;
+        is_valid_currency_or_item(&env, &currency)?;
         is_valid_amount(amount)?;
         is_valid_transfer_parties(&caller, &new_allowee)?;
 
-        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -986,7 +976,7 @@ impl ProjectContract {
         let event_allowee = src_key.0;
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 amount,
             },),
@@ -1013,19 +1003,18 @@ impl ProjectContract {
     pub fn transfer_item_allowance(
         env: Env,
         caller: Address,
-        project_id: String,
+        project_id: u64,
         new_allowee: Address,
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
         check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &item_id)?;
+        is_valid_currency_or_item(&env, &item_id)?;
         is_valid_quantity(quantity)?;
         is_valid_transfer_parties(&caller, &new_allowee)?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -1059,7 +1048,7 @@ impl ProjectContract {
         let event_allowee = src_key.0;
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 amount: quantity,
             },),
@@ -1086,19 +1075,18 @@ impl ProjectContract {
     pub fn redeem_item_claims(
         env: Env,
         vendor: Address,
-        project_id: Option<String>,
+        project_id: Option<u64>,
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
-        let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
+        let project_id = project_id.unwrap_or(1); // Default project ID is 1
         check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, ROLE_VENDOR)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &item_id)?;
+        is_valid_currency_or_item(&env, &item_id)?;
         is_valid_quantity(quantity)?;
 
-        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -1126,7 +1114,7 @@ impl ProjectContract {
         let event_allowee = item_key.0;
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: event_allowee,
                 amount: quantity,
             },),
@@ -1152,19 +1140,18 @@ impl ProjectContract {
     pub fn redeem_cash_claims(
         env: Env,
         vendor: Address,
-        project_id: Option<String>,
+        project_id: Option<u64>,
         currency: String,
         amount: u64,
     ) -> Result<(), ContractError> {
-        let project_id = project_id.unwrap_or(String::from_str(&env, "default_project"));
+        let project_id = project_id.unwrap_or(1); // Default project ID is 1
         check_paused(&env)?;
 
         require_role(&env, &vendor, &project_id, ROLE_VENDOR)?;
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &currency)?;
+        is_valid_currency_or_item(&env, &currency)?;
         is_valid_amount(amount)?;
 
-        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone());
+        let storage_key = (Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id);
         let mut allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -1192,7 +1179,7 @@ impl ProjectContract {
 
         env.events().publish(
             (AllowanceClaimed {
-                project_id: project_id.clone(),
+                project_id,
                 allowee: vendor,
                 amount,
             },),
@@ -1214,12 +1201,11 @@ impl ProjectContract {
     /// - `ContractError::InvalidInput`
     pub fn get_cash_allowance(
         env: Env,
-        project_id: String,
+        project_id: u64,
         allowee: Address,
         currency: String,
     ) -> Result<CashAllowance, ContractError> {
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &currency)?;
+        is_valid_currency_or_item(&env, &currency)?;
         let allowances: Map<(Address, String), CashAllowance> = env
             .storage()
             .persistent()
@@ -1243,12 +1229,11 @@ impl ProjectContract {
     /// - `ContractError::InvalidInput`
     pub fn get_item_allowance(
         env: Env,
-        project_id: String,
+        project_id: u64,
         allowee: Address,
         item_id: String,
     ) -> Result<ItemAllowance, ContractError> {
-        is_valid_identifier(&env, &project_id)?;
-        is_valid_identifier(&env, &item_id)?;
+        is_valid_currency_or_item(&env, &item_id)?;
         let allowances: Map<(Address, String), ItemAllowance> = env
             .storage()
             .persistent()
@@ -1266,9 +1251,8 @@ impl ProjectContract {
     /// - `project_id`: project identifier.
     pub fn get_all_cash_allowances(
         env: Env,
-        project_id: String,
+        project_id: u64,
     ) -> Map<(Address, String), CashAllowance> {
-        let _ = is_valid_identifier(&env, &project_id);
         env.storage()
             .persistent()
             .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id))
@@ -1281,9 +1265,8 @@ impl ProjectContract {
     /// - `project_id`: project identifier.
     pub fn get_all_item_allowances(
         env: Env,
-        project_id: String,
+        project_id: u64,
     ) -> Map<(Address, String), ItemAllowance> {
-        let _ = is_valid_identifier(&env, &project_id);
         env.storage()
             .persistent()
             .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
@@ -1301,17 +1284,15 @@ impl ProjectContract {
     pub fn get_total_cash_allowance(
         env: Env,
         beneficiary: Address,
-        project_ids: Vec<String>,
+        project_ids: Vec<u64>,
     ) -> Result<u64, ContractError> {
         let mut total_amount: u64 = 0;
         // Bound the number of project IDs
         is_valid_batch_len(project_ids.len())?;
 
         for project_id in project_ids.iter() {
-            // Validate each project identifier
-            is_valid_identifier(&env, &project_id)?;
             let allowances: Map<(Address, String), CashAllowance> =
-                Self::get_all_cash_allowances(env.clone(), project_id.clone());
+                Self::get_all_cash_allowances(env.clone(), project_id);
 
             for ((allowee, _currency), allowance) in allowances.iter() {
                 if allowee == beneficiary {
@@ -1334,15 +1315,14 @@ impl ProjectContract {
     pub fn get_total_item_allowance(
         env: Env,
         beneficiary: Address,
-        project_ids: Vec<String>,
+        project_ids: Vec<u64>,
     ) -> Result<u64, ContractError> {
         let mut total_quantity: u64 = 0;
         is_valid_batch_len(project_ids.len())?;
 
         for project_id in project_ids.iter() {
-            is_valid_identifier(&env, &project_id)?;
             let allowances: Map<(Address, String), ItemAllowance> =
-                Self::get_all_item_allowances(env.clone(), project_id.clone());
+                Self::get_all_item_allowances(env.clone(), project_id);
 
             for ((allowee, _item_id), allowance) in allowances.iter() {
                 if allowee == beneficiary {
@@ -1358,9 +1338,7 @@ impl ProjectContract {
     ///
     /// # Arguments
     /// - `project_id`: project identifier.
-    pub fn get_roles(env: Env, project_id: String) -> Roles {
-        // Validate project identifier
-        let _ = is_valid_identifier(&env, &project_id);
+    pub fn get_roles(env: Env, project_id: u64) -> Roles {
         get_roles(&env, &project_id)
     }
 
@@ -1402,8 +1380,7 @@ impl ProjectContract {
     /// - `project_id`: The project identifier.
     /// - `address`: The address to check.
     /// - `role`: The role integer (0=super_admin, 1=admin, 2=ngo, 3=vendor, 4=beneficiary).
-    pub fn has_role(env: Env, project_id: String, address: Address, role: u32) -> bool {
-        let _ = is_valid_identifier(&env, &project_id);
+    pub fn has_role(env: Env, project_id: u64, address: Address, role: u32) -> bool {
         let roles = get_roles(&env, &project_id);
 
         match role {
@@ -1565,6 +1542,14 @@ fn is_valid_identifier(_env: &Env, s: &String) -> Result<(), ContractError> {
     Ok(())
 }
 
+fn is_valid_currency_or_item(_env: &Env, s: &String) -> Result<(), ContractError> {
+    // currency and item_id limited to 6 characters for optimization
+    if s.len() == 0 || s.len() > 6 {
+        return Err(ContractError::InvalidInput);
+    }
+    Ok(())
+}
+
 fn is_future_expiry(env: &Env, expiry: Option<u64>) -> Result<(), ContractError> {
     if let Some(e) = expiry {
         let now = env.ledger().timestamp();
@@ -1592,7 +1577,7 @@ fn is_valid_transfer_parties(caller: &Address, other: &Address) -> Result<(), Co
     Ok(())
 }
 
-fn is_valid_vendor(env: &Env, project_id: &String, addr: &Address) -> Result<(), ContractError> {
+fn is_valid_vendor(env: &Env, project_id: &u64, addr: &Address) -> Result<(), ContractError> {
     let roles = get_roles(env, project_id);
     if roles.vendors.contains(addr) {
         Ok(())
@@ -1636,7 +1621,7 @@ fn require_owner(env: &Env, caller: &Address) -> Result<(), ContractError> {
 fn require_role(
     env: &Env,
     caller: &Address,
-    project_id: &String,
+    project_id: &u64,
     required_role: u32,
 ) -> Result<(), ContractError> {
     caller.require_auth();
@@ -1691,8 +1676,8 @@ fn require_owner_or_contract_admin(env: &Env, caller: &Address) -> Result<(), Co
     Err(ContractError::Unauthorized)
 }
 
-fn get_roles(env: &Env, project_id: &String) -> Roles {
-    let storage_key = (Symbol::new(env, ROLES_KEY), project_id.clone());
+fn get_roles(env: &Env, project_id: &u64) -> Roles {
+    let storage_key = (Symbol::new(env, ROLES_KEY), project_id);
     env.storage()
         .persistent()
         .get(&storage_key)
@@ -1705,8 +1690,8 @@ fn get_roles(env: &Env, project_id: &String) -> Roles {
         })
 }
 
-fn set_roles(env: &Env, project_id: &String, roles: &Roles) {
-    let storage_key = (Symbol::new(env, ROLES_KEY), project_id.clone());
+fn set_roles(env: &Env, project_id: &u64, roles: &Roles) {
+    let storage_key = (Symbol::new(env, ROLES_KEY), project_id);
     env.storage().persistent().set(&storage_key, roles);
 }
 
