@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test {
     use soroban_sdk::testutils::Ledger;
-    use soroban_sdk::{testutils::Address as _, vec, Address, Env, Map, String, Symbol, Vec};
+    use soroban_sdk::{testutils::Address as _, vec, Address, Env, String, Symbol, Vec};
 
     use crate::{
         CashAllowance, ContractError, ItemAllowance, ProjectContract, ProjectContractClient, Roles,
@@ -42,19 +42,8 @@ mod test {
 
         // initial state
         env.as_contract(&contract_id, || {
-            let cash_key = (
-                Symbol::new(env, CASH_ALLOWANCES_KEY),
-                PROJECT_ID,
-            );
-            let cash_map: Map<(Address, String), CashAllowance> = Map::new(env);
-            env.storage().persistent().set(&cash_key, &cash_map);
-
-            let items_key = (
-                Symbol::new(env, ITEM_ALLOWANCES_KEY),
-                PROJECT_ID,
-            );
-            let items_map: Map<(Address, String), ItemAllowance> = Map::new(env);
-            env.storage().persistent().set(&items_key, &items_map);
+            // Cash allowances now use individual keys - no map initialization needed
+            // Item allowances now use individual keys - no map initialization needed
 
             // setup roles
             let roles_key = (Symbol::new(env, "roles"), PROJECT_ID);
@@ -69,6 +58,25 @@ mod test {
         });
 
         (client, owner, super_admin, ngo, beneficiary, vendor)
+    }
+
+    // Helper function to get item allowance using new individual key storage pattern
+    fn get_item_allowance_from_storage(
+        env: &Env,
+        contract_address: &Address,
+        project_id: u64,
+        allowee: &Address,
+        item_id: &String,
+    ) -> Option<ItemAllowance> {
+        env.as_contract(contract_address, || {
+            let storage_key = (
+                Symbol::new(env, ITEM_ALLOWANCES_KEY),
+                project_id,
+                allowee.clone(),
+                item_id.clone(),
+            );
+            env.storage().persistent().get(&storage_key)
+        })
     }
 
     #[test]
@@ -108,20 +116,18 @@ mod test {
             &None,
         );
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
+        let allowance: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    beneficiary.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
                 .unwrap()
-                .amount,
-            100
-        );
+        });
+        assert_eq!(allowance.amount, 100);
     }
 
     #[test]
@@ -147,20 +153,18 @@ mod test {
             &None,
         );
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary, String::from_str(&env, CURRENCY)))
+        let allowance: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id,
+                    beneficiary,
+                    String::from_str(&env, CURRENCY),
+                ))
                 .unwrap()
-                .amount,
-            50
-        );
+        });
+        assert_eq!(allowance.amount, 50);
     }
 
     #[test]
@@ -179,20 +183,14 @@ mod test {
             &None,
         );
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
-                .unwrap()
-                .quantity,
-            10
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
         );
+        assert_eq!(allowance.unwrap().quantity, 10);
     }
 
     #[test]
@@ -218,20 +216,14 @@ mod test {
             &5,
         );
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
-                .unwrap()
-                .quantity,
-            5
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
         );
+        assert_eq!(allowance.unwrap().quantity, 5);
     }
 
     #[test]
@@ -258,20 +250,18 @@ mod test {
         ];
         client.allocate_cash_allowances_batch(&ngo, &project_id, &allowances);
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary, String::from_str(&env, CURRENCY)))
+        let allowance: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    beneficiary,
+                    String::from_str(&env, CURRENCY),
+                ))
                 .unwrap()
-                .amount,
-            100
-        );
+        });
+        assert_eq!(allowance.amount, 100);
     }
 
     #[test]
@@ -298,20 +288,14 @@ mod test {
         ];
         client.allocate_item_allowances_batch(&ngo, &project_id, &allowances);
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((beneficiary, String::from_str(&env, ITEM_ID)))
-                .unwrap()
-                .quantity,
-            10
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
         );
+        assert_eq!(allowance.unwrap().quantity, 10);
     }
 
     #[test]
@@ -338,20 +322,18 @@ mod test {
             &50,
         );
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((new_allowee, String::from_str(&env, CURRENCY)))
+        let allowance: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    new_allowee.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
                 .unwrap()
-                .amount,
-            50
-        );
+        });
+        assert_eq!(allowance.amount, 50);
     }
 
     #[test]
@@ -378,20 +360,14 @@ mod test {
             &5,
         );
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        assert_eq!(
-            allowances
-                .get((new_allowee, String::from_str(&env, ITEM_ID)))
-                .unwrap()
-                .quantity,
-            5
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &new_allowee,
+            &String::from_str(&env, ITEM_ID),
         );
+        assert_eq!(allowance.unwrap().quantity, 5);
     }
 
     #[test]
@@ -423,14 +399,14 @@ mod test {
             &5,
         );
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-        assert!(!allowances.contains_key((vendor.clone(), String::from_str(&env, ITEM_ID))));
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &String::from_str(&env, ITEM_ID),
+        );
+        assert!(allowance.is_none());
     }
 
     #[test]
@@ -462,14 +438,17 @@ mod test {
             &50,
         );
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-        assert!(!allowances.contains_key((vendor.clone(), String::from_str(&env, CURRENCY))));
+        let allowance_result: Option<CashAllowance> = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id,
+                    vendor.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
+        });
+        assert!(allowance_result.is_none());
     }
 
     #[test]
@@ -527,7 +506,11 @@ mod test {
             &String::from_str(&env, CURRENCY),
             &None,
         );
-        let allowances = client.get_all_cash_allowances(&project_id);
+        let allowances = client.get_all_cash_allowances(
+            &project_id,
+            &vec![&env, beneficiary.clone()],
+            &vec![&env, String::from_str(&env, CURRENCY)],
+        );
         assert_eq!(allowances.len(), 1);
     }
 
@@ -546,7 +529,11 @@ mod test {
             &10,
             &None,
         );
-        let allowances = client.get_all_item_allowances(&project_id);
+        let allowances = client.get_all_item_allowances(
+            &project_id,
+            &vec![&env, beneficiary.clone()],
+            &vec![&env, String::from_str(&env, ITEM_ID)],
+        );
         assert_eq!(allowances.len(), 1);
     }
 
@@ -565,7 +552,11 @@ mod test {
             &String::from_str(&env, CURRENCY),
             &None,
         );
-        let total = client.get_total_cash_allowance(&beneficiary, &vec![&env, project_id]);
+        let total = client.get_total_cash_allowance(
+            &beneficiary,
+            &vec![&env, project_id],
+            &vec![&env, String::from_str(&env, CURRENCY)],
+        );
         assert_eq!(total, 100);
     }
 
@@ -584,7 +575,11 @@ mod test {
             &10,
             &None,
         );
-        let total = client.get_total_item_allowance(&beneficiary, &vec![&env, project_id.clone()]);
+        let total = client.get_total_item_allowance(
+            &beneficiary,
+            &vec![&env, project_id.clone()],
+            &vec![&env, String::from_str(&env, ITEM_ID)],
+        );
         assert_eq!(total, 10);
     }
 
@@ -961,16 +956,17 @@ mod test {
             &Some(e2),
         );
 
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        let entry = allowances
-            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
-            .unwrap();
+        let entry: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    beneficiary.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
+                .unwrap()
+        });
         assert_eq!(entry.amount, 150);
         assert_eq!(entry.expiry, Some(e2));
     }
@@ -1004,16 +1000,14 @@ mod test {
             &Some(e2),
         );
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        let entry = allowances
-            .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
-            .unwrap();
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+        );
+        let entry = allowance.unwrap();
         assert_eq!(entry.quantity, 15);
         assert_eq!(entry.expiry, Some(e2));
     }
@@ -1042,16 +1036,17 @@ mod test {
             &String::from_str(&env, CURRENCY),
             &Some(999_999),
         );
-        let allowances: Map<(Address, String), CashAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
-        let entry1 = allowances
-            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
-            .unwrap();
+        let entry1: CashAllowance = env.as_contract(&client.address, || {
+            env.storage()
+                .persistent()
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    beneficiary.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
+                .unwrap()
+        });
         assert_eq!(entry1.amount, 15);
         assert_eq!(entry1.expiry, None);
 
@@ -1072,15 +1067,14 @@ mod test {
             &1,
             &None,
         );
-        let items: Map<(Address, String), ItemAllowance> = env.as_contract(&client.address, || {
-            env.storage()
-                .persistent()
-                .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                .unwrap()
-        });
-        let entry2 = items
-            .get((beneficiary.clone(), String::from_str(&env, ITEM_ID)))
-            .unwrap();
+        let allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &String::from_str(&env, ITEM_ID),
+        );
+        let entry2 = allowance.unwrap();
         assert_eq!(entry2.quantity, 2);
         assert_eq!(entry2.expiry, Some(111_111));
     }
@@ -1111,15 +1105,17 @@ mod test {
         ];
         client.allocate_cash_allowances_batch(&ngo, &project_id, &allowances);
 
-        let map: Map<(Address, String), CashAllowance> = env.as_contract(&client.address, || {
+        let entry: CashAllowance = env.as_contract(&client.address, || {
             env.storage()
                 .persistent()
-                .get(&(Symbol::new(&env, CASH_ALLOWANCES_KEY), project_id.clone()))
+                .get(&(
+                    Symbol::new(&env, CASH_ALLOWANCES_KEY),
+                    project_id.clone(),
+                    beneficiary.clone(),
+                    String::from_str(&env, CURRENCY),
+                ))
                 .unwrap()
         });
-        let entry = map
-            .get((beneficiary.clone(), String::from_str(&env, CURRENCY)))
-            .unwrap();
         assert_eq!(entry.amount, 30);
         assert_eq!(entry.expiry, Some(now + 2_000));
     }
@@ -1326,8 +1322,11 @@ mod test {
         );
 
         // this should panic with InvalidInput (1012) after fix
-        let _total =
-            client.get_total_cash_allowance(&beneficiary, &vec![&env, project_id1, project_id2]);
+        let _total = client.get_total_cash_allowance(
+            &beneficiary,
+            &vec![&env, project_id1, project_id2],
+            &vec![&env, String::from_str(&env, CURRENCY)],
+        );
     }
 
     #[test]
@@ -1375,8 +1374,11 @@ mod test {
         );
 
         // this should panic with InvalidInput (1012) after fix
-        let _total =
-            client.get_total_item_allowance(&beneficiary, &vec![&env, project_id1, project_id2]);
+        let _total = client.get_total_item_allowance(
+            &beneficiary,
+            &vec![&env, project_id1, project_id2],
+            &vec![&env, String::from_str(&env, ITEM_ID)],
+        );
     }
 
     #[test]
@@ -2147,55 +2149,60 @@ mod test {
         client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
 
         // Verify beneficiary balances were reduced
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id.clone()))
-                    .unwrap()
-            });
+        let rice_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_rice,
+        );
+        assert_eq!(rice_allowance.unwrap().quantity, 3); // 10 - 7
 
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), item_rice.clone()))
-                .unwrap()
-                .quantity,
-            3 // 10 - 7
+        let beans_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_beans,
         );
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), item_beans.clone()))
-                .unwrap()
-                .quantity,
-            2 // 5 - 3
+        assert_eq!(beans_allowance.unwrap().quantity, 2); // 5 - 3
+
+        let oil_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_oil,
         );
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), item_oil.clone()))
-                .unwrap()
-                .quantity,
-            1 // 3 - 2
-        );
+        assert_eq!(oil_allowance.unwrap().quantity, 1); // 3 - 2
 
         // Verify vendor received the items
-        assert_eq!(
-            allowances
-                .get((vendor.clone(), item_rice))
-                .unwrap()
-                .quantity,
-            7
+        let vendor_rice = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_rice,
         );
-        assert_eq!(
-            allowances
-                .get((vendor.clone(), item_beans))
-                .unwrap()
-                .quantity,
-            3
+        assert_eq!(vendor_rice.unwrap().quantity, 7);
+        
+        let vendor_beans = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_beans,
         );
-        assert_eq!(
-            allowances.get((vendor, item_oil)).unwrap().quantity,
-            2
+        assert_eq!(vendor_beans.unwrap().quantity, 3);
+
+        let vendor_oil = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_oil,
         );
+        assert_eq!(vendor_oil.unwrap().quantity, 2);
     }
 
     #[test]
@@ -2212,22 +2219,23 @@ mod test {
         let claims = vec![&env, (item_id.clone(), 50)];
         client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-
-        assert_eq!(
-            allowances
-                .get((beneficiary, item_id.clone()))
-                .unwrap()
-                .quantity,
-            50
+        let beneficiary_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_id,
         );
-        assert_eq!(allowances.get((vendor, item_id)).unwrap().quantity, 50);
+        assert_eq!(beneficiary_allowance.unwrap().quantity, 50);
+
+        let vendor_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_id,
+        );
+        assert_eq!(vendor_allowance.unwrap().quantity, 50);
     }
 
     #[test]
@@ -2311,19 +2319,15 @@ mod test {
         let claims2 = vec![&env, (item_id.clone(), 20)];
         client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims2);
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-
-        // Vendor should have accumulated balance
-        assert_eq!(
-            allowances.get((vendor, item_id)).unwrap().quantity,
-            50 // 30 + 20
+        let vendor_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_id,
         );
+        // Vendor should have accumulated balance
+        assert_eq!(vendor_allowance.unwrap().quantity, 50); // 30 + 20
     }
 
     #[test]
@@ -2349,21 +2353,23 @@ mod test {
         let claims = vec![&env, (item_id.clone(), 50)];
         client.claim_item_allowances_batch(&beneficiary, &vendor, &project_id, &claims);
 
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-
-        assert_eq!(
-            allowances
-                .get((beneficiary, item_id))
-                .unwrap()
-                .quantity,
-            50
+        let vendor_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &vendor,
+            &item_id,
         );
+        assert_eq!(vendor_allowance.unwrap().quantity, 50);
+        
+        let beneficiary_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_id,
+        );
+        assert_eq!(beneficiary_allowance.unwrap().quantity, 50);
     }
 
     #[test]
@@ -2434,29 +2440,24 @@ mod test {
         assert!(result.is_err());
 
         // Verify NO items were claimed (atomic transaction)
-        let allowances: Map<(Address, String), ItemAllowance> =
-            env.as_contract(&client.address, || {
-                env.storage()
-                    .persistent()
-                    .get(&(Symbol::new(&env, ITEM_ALLOWANCES_KEY), project_id))
-                    .unwrap()
-            });
-
+        let rice_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_rice,
+        );
         // Rice should still be 10 (not 5) because entire batch failed
-        assert_eq!(
-            allowances
-                .get((beneficiary.clone(), item_rice))
-                .unwrap()
-                .quantity,
-            10
+        assert_eq!(rice_allowance.unwrap().quantity, 10);
+        
+        let beans_allowance = get_item_allowance_from_storage(
+            &env,
+            &client.address,
+            project_id,
+            &beneficiary,
+            &item_beans,
         );
-        assert_eq!(
-            allowances
-                .get((beneficiary, item_beans))
-                .unwrap()
-                .quantity,
-            2
-        );
+        assert_eq!(beans_allowance.unwrap().quantity, 2);
     }
 }
 
