@@ -1,47 +1,127 @@
 # CHATS Smart Contracts
 
-This repository contains the smart contracts that power the CHATS platform's blockchain functionality. The contracts are implemented in both Rust (for Stellar Soroban) and Solidity (for Ethereum), providing cross-chain compatibility.
+Multi-chain smart contracts powering the CHATS humanitarian aid platform. Supports both **EVM** (Ethereum, Polygon, etc.) and **Stellar Soroban** blockchains.
 
-## Core Contracts
+```
+chats-contracts/
+├── evm/                    # Solidity contracts (Hardhat)
+├── soroban/                # Rust contracts (Stellar)
+└── shared/                 # ABIs, types, documentation
+```
 
-### 1. Project Contract (Soroban)
-[`ProjectContract/src/lib.rs`](stellar-contracts/soroban-contract/contracts/projectContract/src/lib.rs)
+## Quick Start
 
-A Stellar Soroban smart contract that manages cash and item allowances for NGOs, vendors, and beneficiaries. It implements a role-based access control system and handles allowance allocation, claiming, and transfers.
+### EVM Contracts
 
-Key Features:
-- Role-based access control (NGO, Vendor, Beneficiary)
-- Cash and item allowance management
-- Batch operations for efficiency
-- Expiry-based allowances
-- Event emission for tracking
-- Pause/unpause functionality
+```bash
+cd evm
+npm install
+npx hardhat compile
+npx hardhat test
+```
 
-### 2. Project Contract (ERC20)
-[`ProjectContract.sol`](contracts/ProjectContract.sol)
+### Soroban Contracts
 
-An Ethereum-based ERC20 implementation of the project contract. It manages token-based allowances and vendor interactions.
+```bash
+cd soroban
+cargo build --release
+cargo test
+```
 
-Key Features:
-- ERC20 token integration
-- Role-based access control
-- Allowance allocation and claiming
-- Vendor registration and management
-- Spending limit controls
-- Reentrancy protection
+## Contracts Overview
 
-### 3. USDT Test Token
-[`USDTContract.sol`](contracts/USDTContract.sol)
+| Chain | Contract | Description |
+|-------|----------|-------------|
+| Soroban | [`project-contract`](soroban/contracts/project-contract/src/lib.rs) | Cash & item allowance management with RBAC |
+| EVM | [`ProjectContract.sol`](evm/contracts/ProjectContract.sol) | ERC20-based allowance management |
+| EVM | [`ProjectFactory.sol`](evm/contracts/ProjectFactory.sol) | Factory for deploying project instances |
+| EVM | [`ERC20Token.sol`](evm/contracts/ERC20Token.sol) | Base ERC20 token |
 
-A simplified USDT implementation for testing purposes on the Sepolia testnet.
+## Architecture
 
-Key Features:
-- Basic ERC20 functionality
-- Minting capability
-- Transfer and approval mechanisms
-- Event emission
+Both implementations share the same core functionality:
 
-- Access control
-- Allowance management
-- Vendor interactions
-- Security features
+- **Role-Based Access Control**: Super Admin, Admin, NGO, Vendor, Beneficiary
+- **Allowance Management**: Cash and item allowances with expiry
+- **Batch Operations**: Efficient bulk allocation and claiming
+- **Security**: Pause functionality, reentrancy protection, input validation
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CHATS Platform                        │
+├─────────────────────────┬───────────────────────────────┤
+│      EVM Networks       │      Stellar Network          │
+│  (Ethereum, Polygon)    │        (Soroban)              │
+├─────────────────────────┼───────────────────────────────┤
+│  ProjectContract.sol    │    project-contract (Rust)    │
+│  - ERC20 Integration    │    - Native token support     │
+│  - Hardhat tooling      │    - WASM compilation         │
+└─────────────────────────┴───────────────────────────────┘
+```
+
+## Documentation
+
+- [EVM Contracts](evm/README.md) - Setup, deployment, and usage
+- [Soroban Contracts](soroban/README.md) - Setup, deployment, and usage
+- [Architecture](shared/docs/architecture.md) - Detailed design docs
+
+## Development
+
+### Testing
+- Write comprehensive unit tests
+- Test both individual and integrated functionality
+- Include edge cases and error conditions
+
+### Security
+- Follow best practices for smart contract security
+- Implement proper access controls
+- Include reentrancy protection
+- Validate all inputs
+- Document events
+- Provide usage examples
+
+### Deployment
+- Test thoroughly on testnets
+- Verify contract interactions
+- Monitor gas usage
+- Document deployment steps
+- Maintain deployment records
+
+## Getting Started
+
+### Prerequisites
+- Rust (for Soroban contracts)
+- Solidity (for Ethereum contracts)
+- Node.js and npm
+- Hardhat or Truffle
+- Soroban CLI
+
+### Installation
+```bash
+# build Soroban contracts
+cd soroban
+cargo build --target wasm32-unknown-unknown --release
+
+# Install dependencies
+npm install
+
+```
+
+### Testing
+```bash
+# Test Ethereum contracts
+npm test
+
+# Test Soroban contracts
+cargo test
+```
+
+## Contributing
+1. Fork the repository
+2. Create your feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
