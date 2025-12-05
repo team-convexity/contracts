@@ -32,7 +32,7 @@ cargo test
 
 | Chain | Contract | Description |
 |-------|----------|-------------|
-| Soroban | [`project-contract`](soroban/contracts/project-contract/src/lib.rs) | Cash & item allowance management with RBAC |
+| Soroban | [`project-contract`](/contracts/soroban/project-contract/src/lib.rs) | Cash & item allowance management with RBAC |
 | EVM | [`ProjectContract.sol`](evm/contracts/ProjectContract.sol) | ERC20-based allowance management |
 | EVM | [`ProjectFactory.sol`](evm/contracts/ProjectFactory.sol) | Factory for deploying project instances |
 | EVM | [`ERC20Token.sol`](evm/contracts/ERC20Token.sol) | Base ERC20 token |
