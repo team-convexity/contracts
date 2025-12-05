@@ -1,0 +1,17 @@
+[package]
+name = "project-contract"
+version = "1.0.1"
+edition = "2021"
+description = "CHATS Project Contract - Manages cash and item allowances for NGOs, vendors, and beneficiaries"
+license = "AGPL-3.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "22.0"
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

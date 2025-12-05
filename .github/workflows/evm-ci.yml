@@ -1,0 +1,42 @@
+name: EVM CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'evm/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'evm/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: evm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: evm/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Run tests
+        run: npx hardhat test
+
+      - name: Check contract sizes
+        run: npx hardhat size-contracts
+        continue-on-error: true
