@@ -20,8 +20,8 @@ DEPLOYER_ACCOUNT="${DEPLOYER_ACCOUNT:-}"
 EXISTING_CONTRACT_ID="${EXISTING_CONTRACT_ID:-}"
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-WASM_FILE="$PROJECT_ROOT/target/wasm32-unknown-unknown/release/projectcontract.optimized.wasm"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RAW_WASM="$PROJECT_ROOT/target/wasm32-unknown-unknown/release/project_contract.wasm"
 
 # validation
 if [ -z "$DEPLOYER_ACCOUNT" ]; then
@@ -38,19 +38,21 @@ if [ -z "$EXISTING_CONTRACT_ID" ]; then
     exit 1
 fi
 
-if [ ! -f "$WASM_FILE" ]; then
-    echo -e "${YELLOW} Optimized WASM not found. Building...${NC}\n"
-    cd "$PROJECT_ROOT"
-    cargo build --target wasm32-unknown-unknown --release
-    soroban contract optimize --wasm target/wasm32-unknown-unknown/release/projectcontract.wasm
-    echo ""
-fi
+echo -e "${YELLOW}Building the release WASM${NC}"
+cd "$PROJECT_ROOT"
+cargo build --locked --target wasm32-unknown-unknown --release
+WASM_DIR="$(mktemp -d)"
+WASM_FILE="$WASM_DIR/project_contract.optimized.wasm"
+trap 'rm -f -- "$WASM_FILE"; rmdir -- "$WASM_DIR"' EXIT
+soroban contract optimize --wasm "$RAW_WASM" --wasm-out "$WASM_FILE"
+test -s "$WASM_FILE"
 
 echo -e "${GREEN}✓${NC} Configuration:"
 echo "   Network: $NETWORK"
 echo "   Deployer: $DEPLOYER_ACCOUNT"
 echo "   Contract: $EXISTING_CONTRACT_ID"
-echo "   WASM: $(basename $WASM_FILE)"
+echo "   WASM: $(basename "$WASM_FILE")"
+shasum -a 256 "$WASM_FILE"
 echo ""
 
 # Confirm
