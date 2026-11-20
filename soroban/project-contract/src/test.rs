@@ -749,6 +749,34 @@ mod test {
     }
 
     #[test]
+    fn test_pause_blocks_cash_and_item_claims() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (client, owner, _, ngo, beneficiary, vendor) = setup_contract(&env);
+        let currency = String::from_str(&env, CURRENCY);
+        let item = String::from_str(&env, ITEM_ID);
+        client.allocate_cash_allowance(&ngo, &PROJECT_ID, &beneficiary, &10, &currency, &None);
+        client.allocate_item_allowance(&ngo, &PROJECT_ID, &beneficiary, &item, &10, &None);
+        let claims = vec![&env, (item.clone(), 1u64)];
+
+        client.pause_contract(&owner);
+        assert!(client
+            .try_claim_cash_allowance(&beneficiary, &PROJECT_ID, &currency, &1, &None)
+            .is_err());
+        assert!(client
+            .try_claim_item_allowance(&beneficiary, &vendor, &PROJECT_ID, &item, &1)
+            .is_err());
+        assert!(client
+            .try_claim_item_allowances_batch(&beneficiary, &vendor, &PROJECT_ID, &claims)
+            .is_err());
+
+        client.unpause_contract(&owner);
+        client.claim_cash_allowance(&beneficiary, &PROJECT_ID, &currency, &1, &None);
+        client.claim_item_allowance(&beneficiary, &vendor, &PROJECT_ID, &item, &1);
+        client.claim_item_allowances_batch(&beneficiary, &vendor, &PROJECT_ID, &claims);
+    }
+
+    #[test]
     fn test_pause_timelock_auto_expiry() {
         let env = Env::default();
         env.mock_all_auths();
