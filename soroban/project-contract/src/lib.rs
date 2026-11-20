@@ -577,6 +577,7 @@ impl ProjectContract {
         amount: u64,
         vendor: Option<Address>,
     ) -> Result<(), ContractError> {
+        check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_currency_or_item(&env, &currency)?;
         is_valid_amount(amount)?;
@@ -725,6 +726,7 @@ impl ProjectContract {
         item_id: String,
         quantity: u64,
     ) -> Result<(), ContractError> {
+        check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_currency_or_item(&env, &item_id)?;
         is_valid_quantity(quantity)?;
@@ -809,6 +811,7 @@ impl ProjectContract {
         project_id: u64,
         claims: Vec<(String, u64)>,
     ) -> Result<(), ContractError> {
+        check_paused(&env)?;
         require_role(&env, &caller, &project_id, ROLE_BENEFICIARY)?;
         is_valid_transfer_parties(&caller, &vendor)?;
         let roles = get_roles(&env, &project_id);
